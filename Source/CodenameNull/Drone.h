@@ -3,16 +3,16 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "GameFramework/Character.h"
+#include "GameFramework/Pawn.h"
 #include "Drone.generated.h"
 
 UCLASS()
-class CODENAMENULL_API ADrone : public ACharacter
+class CODENAMENULL_API ADrone : public APawn
 {
 	GENERATED_BODY()
 
 public:
-	// Sets default values for this character's properties
+	// Sets default values for this pawn's properties
 	ADrone();
 
 protected:
@@ -25,5 +25,6 @@ public:
 
 	// Called to bind functionality to input
 	virtual void SetupPlayerInputComponent(class UInputComponent* PlayerInputComponent) override;
+	
 
 };
