@@ -2,6 +2,8 @@
 
 
 #include "GunProjectile.h"
+#include <Runtime\Engine\Classes\Kismet\GameplayStatics.h>
+#include "DrawDebugHelpers.h"
 
 //AGunProjectile::AGunProjectile(float initialSpeed, float maxSpeed, bool bRotationFollowsVelocity, bool bShouldBounce, float bounciness, float projectileGravityScale)
 //{
@@ -27,9 +29,10 @@ AGunProjectile::AGunProjectile()
 		// Event called when component hits something.
 		CollisionComponent->OnComponentHit.AddDynamic(this, &AGunProjectile::OnHit);
 		// Set the sphere's collision radius.
-		CollisionComponent->InitSphereRadius(15.0f);
+		CollisionComponent->InitSphereRadius(50.0f);
 		// Set the root component to be the collision component.
 		RootComponent = CollisionComponent;
+		CollisionComponent->SetNotifyRigidBodyCollision(true);
 	}
 	if (!ProjectileMovementComponent)
 	{
@@ -63,6 +66,7 @@ AGunProjectile::AGunProjectile()
 	ProjectileMeshComponent->SetupAttachment(RootComponent);
 
 	InitialLifeSpan = 3.0f;
+	Damage = 1.0f;
 }
 
 // Called when the game starts or when spawned
@@ -88,9 +92,13 @@ void AGunProjectile::FireInDirection(const FVector& ShootDirection)
 // Function that is called when the projectile hits something.
 void AGunProjectile::OnHit(UPrimitiveComponent* HitComponent, AActor* OtherActor, UPrimitiveComponent* OtherComponent, FVector NormalImpulse, const FHitResult& Hit)
 {
-	if (OtherActor != this && OtherComponent->IsSimulatingPhysics())
+	GEngine->AddOnScreenDebugMessage(-1, 1.5, FColor::White, "hit something");
+	if (OtherActor != this)
 	{
-		OtherComponent->AddImpulseAtLocation(ProjectileMovementComponent->Velocity * 100.0f, Hit.ImpactPoint);
+		if (OtherComponent->IsSimulatingPhysics())
+			OtherComponent->AddImpulseAtLocation(ProjectileMovementComponent->Velocity * 100.0f, Hit.ImpactPoint);
+		else 
+			UGameplayStatics::ApplyPointDamage(OtherActor, Damage, GetVelocity().GetSafeNormal(), Hit, GetInstigatorController(), this, UDamageType::StaticClass());
 	}
 
 	Destroy();
