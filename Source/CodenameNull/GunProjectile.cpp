@@ -25,7 +25,7 @@ AGunProjectile::AGunProjectile()
 		// Set the sphere's collision profile name to "Projectile".
 		CollisionComponent->BodyInstance.SetCollisionProfileName(TEXT("Projectile"));
 		// Event called when component hits something.
-		CollisionComponent->OnComponentHit.AddDynamic(this, &AFPSProjectile::OnHit);
+		CollisionComponent->OnComponentHit.AddDynamic(this, &AGunProjectile::OnHit);
 		// Set the sphere's collision radius.
 		CollisionComponent->InitSphereRadius(15.0f);
 		// Set the root component to be the collision component.
@@ -86,7 +86,7 @@ void AGunProjectile::FireInDirection(const FVector& ShootDirection)
 }
 
 // Function that is called when the projectile hits something.
-void AFPSProjectile::OnHit(UPrimitiveComponent* HitComponent, AActor* OtherActor, UPrimitiveComponent* OtherComponent, FVector NormalImpulse, const FHitResult& Hit)
+void AGunProjectile::OnHit(UPrimitiveComponent* HitComponent, AActor* OtherActor, UPrimitiveComponent* OtherComponent, FVector NormalImpulse, const FHitResult& Hit)
 {
 	if (OtherActor != this && OtherComponent->IsSimulatingPhysics())
 	{
