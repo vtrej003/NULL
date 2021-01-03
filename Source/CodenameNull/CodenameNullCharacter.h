@@ -4,6 +4,9 @@
 
 #include "CoreMinimal.h"
 #include "GameFramework/Character.h"
+#include "GunProjectile.h"
+#include "Camera/CameraComponent.h"
+#include "Components/CapsuleComponent.h"
 #include "CodenameNullCharacter.generated.h"
 
 UCLASS(config=Game)
@@ -57,6 +60,18 @@ protected:
 
 	/** Handler for when a touch input stops. */
 	void TouchStopped(ETouchIndex::Type FingerIndex, FVector Location);
+
+	// Projectile class to spawn.
+	UPROPERTY(EditAnywhere, Category = Projectile)
+		TSubclassOf<class AGunProjectile> ProjectileClass;
+
+	// Function that fires projectiles.
+	UFUNCTION()
+		void Fire();
+
+	// Gun muzzle offset from the camera location.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = Gameplay)
+		FVector MuzzleOffset;
 
 protected:
 	// APawn interface
