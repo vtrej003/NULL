@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<objects serializationModel="Studio.02.01.00">
+	<object class="EventFolder" id="{298eff84-e2b3-4ad5-91ab-bbdebff287a1}">
+		<property name="name">
+			<value>memes</value>
+		</property>
+		<relationship name="folder">
+			<destination>{f9c8716e-b4e1-4d17-a699-134c7e11809c}</destination>
+		</relationship>
+	</object>
+</objects>

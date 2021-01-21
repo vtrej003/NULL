@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<objects serializationModel="Studio.02.01.00">
+	<object class="AudioFile" id="{47fe2f76-250f-4334-86f8-103d8bb781ab}">
+		<property name="assetPath">
+			<value>main gun1.wav</value>
+		</property>
+		<property name="frequencyInKHz">
+			<value>48</value>
+		</property>
+		<property name="channelCount">
+			<value>2</value>
+		</property>
+		<property name="length">
+			<value>1</value>
+		</property>
+		<relationship name="masterAssetFolder">
+			<destination>{a028ac07-6e6e-4aa6-b2b7-f8d3e2f45f0f}</destination>
+		</relationship>
+	</object>
+</objects>

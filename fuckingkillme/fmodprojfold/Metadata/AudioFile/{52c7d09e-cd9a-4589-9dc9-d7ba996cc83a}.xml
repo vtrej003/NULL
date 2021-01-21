@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<objects serializationModel="Studio.02.01.00">
+	<object class="AudioFile" id="{52c7d09e-cd9a-4589-9dc9-d7ba996cc83a}">
+		<property name="assetPath">
+			<value>rasp.mp3</value>
+		</property>
+		<property name="isStreaming">
+			<value>true</value>
+		</property>
+		<property name="frequencyInKHz">
+			<value>44.0999985</value>
+		</property>
+		<property name="channelCount">
+			<value>2</value>
+		</property>
+		<property name="length">
+			<value>266.00489795918367</value>
+		</property>
+		<relationship name="masterAssetFolder">
+			<destination>{e71fa395-2833-40b1-95f0-67291141706f}</destination>
+		</relationship>
+	</object>
+</objects>
