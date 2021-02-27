@@ -10,6 +10,11 @@
 #include "GameFramework/SpringArmComponent.h"
 #include "DrawDebugHelpers.h"
 
+//////Interactable headers//////
+#include "Master_Interactable.h"
+#include "DrawDebugHelpers.h"
+////End Interactable headers////
+
 //////////////////////////////////////////////////////////////////////////
 // ACodenameNullCharacter
 
@@ -60,6 +65,8 @@ void ACodenameNullCharacter::SetupPlayerInputComponent(class UInputComponent* Pl
 	PlayerInputComponent->BindAction("Jump", IE_Pressed, this, &ACharacter::Jump);
 	PlayerInputComponent->BindAction("Jump", IE_Released, this, &ACharacter::StopJumping);
 
+	PlayerInputComponent->BindAction("Interact", IE_Pressed, this, &ACodenameNullCharacter::Interact);
+	
 	PlayerInputComponent->BindAxis("MoveForward", this, &ACodenameNullCharacter::MoveForward);
 	PlayerInputComponent->BindAxis("MoveRight", this, &ACodenameNullCharacter::MoveRight);
 
@@ -78,6 +85,24 @@ void ACodenameNullCharacter::SetupPlayerInputComponent(class UInputComponent* Pl
 	// VR headset functionality
 	PlayerInputComponent->BindAction("ResetVR", IE_Pressed, this, &ACodenameNullCharacter::OnResetVR);
 	PlayerInputComponent->BindAction("Fire", IE_Pressed, this, &ACodenameNullCharacter::Fire);
+}
+
+void ACodenameNullCharacter::Interact()
+{
+	FHitResult OutHit;
+	FVector Start = GetActorLocation();
+	FVector End = Start - GetActorLocation() - GetActorForwardVector()*500;
+	if(GetWorld()->LineTraceSingleByChannel(OutHit, Start, End, ECC_Visibility))
+	{
+		AMaster_Interactable* Obj = Cast<AMaster_Interactable>(OutHit.Actor);
+		
+		if(Obj)
+		{
+			DrawDebugLine(GetWorld(), OutHit.TraceStart, Obj->GetActorLocation(), FColor::Red, false, 1.0f, 0, 10.0f);
+			UE_LOG(LogTemp, Warning, TEXT("line Hit"));
+			Obj->Interact();
+		}
+	}
 }
 
 
