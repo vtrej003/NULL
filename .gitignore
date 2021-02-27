@@ -13,3 +13,11 @@ Plugins/Wwise
 *.suo
 *.xcodeproj
 *.xcworkspace
+/.idea/.idea.CodenameNull.dir/.idea/contentModel.xml
+/.idea/.idea.CodenameNull.dir/.idea/encodings.xml
+/.idea/.idea.CodenameNull.dir/.idea/indexLayout.xml
+/.idea/.idea.CodenameNull.dir/.idea/modules.xml
+/.idea/.idea.CodenameNull.dir/.idea/projectSettingsUpdater.xml
+/.idea/.idea.CodenameNull.dir/.idea/riderModule.iml
+/.idea/.idea.CodenameNull.dir/.idea/vcs.xml
+/.idea/.idea.CodenameNull.dir/.idea/workspace.xml
