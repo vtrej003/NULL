@@ -1,0 +1,452 @@
+Index: Source/CodenameNull/CodenameNullCharacter.cpp
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.BaseRevisionTextPatchEP
+<+>// Copyright Epic Games, Inc. All Rights Reserved.\r\n\r\n#include \"CodenameNullCharacter.h\"\r\n#include \"HeadMountedDisplayFunctionLibrary.h\"\r\n#include \"Camera/CameraComponent.h\"\r\n#include \"Components/CapsuleComponent.h\"\r\n#include \"Components/InputComponent.h\"\r\n#include \"GameFramework/CharacterMovementComponent.h\"\r\n#include \"GameFramework/Controller.h\"\r\n#include \"GameFramework/SpringArmComponent.h\"\r\n#include \"DrawDebugHelpers.h\"\r\n\r\n//////Interactable headers//////\r\n#include \"Master_Interactable.h\"\r\n#include \"DrawDebugHelpers.h\"\r\n////End Interactable headers////\r\n\r\n//////////////////////////////////////////////////////////////////////////\r\n// ACodenameNullCharacter\r\n\r\nACodenameNullCharacter::ACodenameNullCharacter()\r\n{\r\n\t// Set size for collision capsule\r\n\tGetCapsuleComponent()->InitCapsuleSize(42.f, 96.0f);\r\n\r\n\t// set our turn rates for input\r\n\tBaseTurnRate = 45.f;\r\n\tBaseLookUpRate = 45.f;\r\n\r\n\t// Don't rotate when the controller rotates. Let that just affect the camera.\r\n\tbUseControllerRotationPitch = false;\r\n\tbUseControllerRotationYaw = false;\r\n\tbUseControllerRotationRoll = false;\r\n\r\n\t// Configure character movement\r\n\tGetCharacterMovement()->bOrientRotationToMovement = true; // Character moves in the direction of input...\t\r\n\tGetCharacterMovement()->RotationRate = FRotator(0.0f, 540.0f, 0.0f); // ...at this rotation rate\r\n\tGetCharacterMovement()->JumpZVelocity = 600.f;\r\n\tGetCharacterMovement()->AirControl = 0.2f;\r\n\r\n\t// Create a camera boom (pulls in towards the player if there is a collision)\r\n\tCameraBoom = CreateDefaultSubobject<USpringArmComponent>(TEXT(\"CameraBoom\"));\r\n\tCameraBoom->SetupAttachment(RootComponent);\r\n\tCameraBoom->TargetArmLength = 300.0f; // The camera follows at this distance behind the character\t\r\n\tCameraBoom->bUsePawnControlRotation = true; // Rotate the arm based on the controller\r\n\r\n\t// Create a follow camera\r\n\tFollowCamera = CreateDefaultSubobject<UCameraComponent>(TEXT(\"FollowCamera\"));\r\n\tFollowCamera->SetupAttachment(CameraBoom, USpringArmComponent::SocketName); // Attach the camera to the end of the boom and let the boom adjust to match the controller orientation\r\n\tFollowCamera->bUsePawnControlRotation = false; // Camera does not rotate relative to arm\r\n\r\n\tDrawDebugCrosshairs(GetWorld(), FVector(0, 0, 1000), FRotator(0, 0, 0), 500.f, FColor::White, true, -1.f, 0);\r\n\r\n\t// Note: The skeletal mesh and anim blueprint references on the Mesh component (inherited from Character) \r\n\t// are set in the derived blueprint asset named MyCharacter (to avoid direct content references in C++)\r\n}\r\n\r\n//////////////////////////////////////////////////////////////////////////\r\n// Input\r\n\r\nvoid ACodenameNullCharacter::SetupPlayerInputComponent(class UInputComponent* PlayerInputComponent)\r\n{\r\n\t// Set up gameplay key bindings\r\n\tcheck(PlayerInputComponent);\r\n\tPlayerInputComponent->BindAction(\"Jump\", IE_Pressed, this, &ACharacter::Jump);\r\n\tPlayerInputComponent->BindAction(\"Jump\", IE_Released, this, &ACharacter::StopJumping);\r\n\r\n\tPlayerInputComponent->BindAction(\"Interact\", IE_Pressed, this, &ACodenameNullCharacter::Interact);\r\n\t\r\n\tPlayerInputComponent->BindAxis(\"MoveForward\", this, &ACodenameNullCharacter::MoveForward);\r\n\tPlayerInputComponent->BindAxis(\"MoveRight\", this, &ACodenameNullCharacter::MoveRight);\r\n\r\n\t// We have 2 versions of the rotation bindings to handle different kinds of devices differently\r\n\t// \"turn\" handles devices that provide an absolute delta, such as a mouse.\r\n\t// \"turnrate\" is for devices that we choose to treat as a rate of change, such as an analog joystick\r\n\tPlayerInputComponent->BindAxis(\"Turn\", this, &APawn::AddControllerYawInput);\r\n\tPlayerInputComponent->BindAxis(\"TurnRate\", this, &ACodenameNullCharacter::TurnAtRate);\r\n\tPlayerInputComponent->BindAxis(\"LookUp\", this, &APawn::AddControllerPitchInput);\r\n\tPlayerInputComponent->BindAxis(\"LookUpRate\", this, &ACodenameNullCharacter::LookUpAtRate);\r\n\r\n\t// handle touch devices\r\n\tPlayerInputComponent->BindTouch(IE_Pressed, this, &ACodenameNullCharacter::TouchStarted);\r\n\tPlayerInputComponent->BindTouch(IE_Released, this, &ACodenameNullCharacter::TouchStopped);\r\n\r\n\t// VR headset functionality\r\n\tPlayerInputComponent->BindAction(\"ResetVR\", IE_Pressed, this, &ACodenameNullCharacter::OnResetVR);\r\n\tPlayerInputComponent->BindAction(\"Fire\", IE_Pressed, this, &ACodenameNullCharacter::Fire);\r\n}\r\n\r\nvoid ACodenameNullCharacter::Interact()\r\n{\r\n\tFHitResult OutHit;\r\n\tFVector Start = GetActorLocation();\r\n\tFVector End = Start - GetActorLocation() - GetActorForwardVector()*500;\r\n\tif(GetWorld()->LineTraceSingleByChannel(OutHit, Start, End, ECC_Visibility))\r\n\t{\r\n\t\tAMaster_Interactable* Obj = Cast<AMaster_Interactable>(OutHit.Actor);\r\n\t\t\r\n\t\tif(Obj)\r\n\t\t{\r\n\t\t\tDrawDebugLine(GetWorld(), OutHit.TraceStart, Obj->GetActorLocation(), FColor::Red, false, 1.0f, 0, 10.0f);\r\n\t\t\tUE_LOG(LogTemp, Warning, TEXT(\"line Hit\"));\r\n\t\t\tObj->Interact();\r\n\t\t}\r\n\t}\r\n}\r\n\r\n\r\nvoid ACodenameNullCharacter::OnResetVR()\r\n{\r\n\tUHeadMountedDisplayFunctionLibrary::ResetOrientationAndPosition();\r\n}\r\n\r\nvoid ACodenameNullCharacter::TouchStarted(ETouchIndex::Type FingerIndex, FVector Location)\r\n{\r\n\t\tJump();\r\n}\r\n\r\nvoid ACodenameNullCharacter::TouchStopped(ETouchIndex::Type FingerIndex, FVector Location)\r\n{\r\n\t\tStopJumping();\r\n}\r\n\r\nvoid ACodenameNullCharacter::TurnAtRate(float Rate)\r\n{\r\n\t// calculate delta for this frame from the rate information\r\n\tAddControllerYawInput(Rate * BaseTurnRate * GetWorld()->GetDeltaSeconds());\r\n}\r\n\r\nvoid ACodenameNullCharacter::LookUpAtRate(float Rate)\r\n{\r\n\t// calculate delta for this frame from the rate information\r\n\tAddControllerPitchInput(Rate * BaseLookUpRate * GetWorld()->GetDeltaSeconds());\r\n}\r\n\r\nvoid ACodenameNullCharacter::MoveForward(float Value)\r\n{\r\n\tif ((Controller != NULL) && (Value != 0.0f))\r\n\t{\r\n\t\t// find out which way is forward\r\n\t\tconst FRotator Rotation = Controller->GetControlRotation();\r\n\t\tconst FRotator YawRotation(0, Rotation.Yaw, 0);\r\n\r\n\t\t// get forward vector\r\n\t\tconst FVector Direction = FRotationMatrix(YawRotation).GetUnitAxis(EAxis::X);\r\n\t\tAddMovementInput(Direction, Value);\r\n\t}\r\n}\r\n\r\nvoid ACodenameNullCharacter::MoveRight(float Value)\r\n{\r\n\tif ( (Controller != NULL) && (Value != 0.0f) )\r\n\t{\r\n\t\t// find out which way is right\r\n\t\tconst FRotator Rotation = Controller->GetControlRotation();\r\n\t\tconst FRotator YawRotation(0, Rotation.Yaw, 0);\r\n\t\r\n\t\t// get right vector \r\n\t\tconst FVector Direction = FRotationMatrix(YawRotation).GetUnitAxis(EAxis::Y);\r\n\t\t// add movement in that direction\r\n\t\tAddMovementInput(Direction, Value);\r\n\t}\r\n}\r\n\r\nvoid ACodenameNullCharacter::Fire()\r\n{\r\n\t// Attempt to fire a projectile.\r\n\tif (ProjectileClass)\r\n\t{\r\n\t\t// Get the camera transform.\r\n\t\tFVector CameraLocation;\r\n\t\tFRotator CameraRotation;\r\n\t\tGetActorEyesViewPoint(CameraLocation, CameraRotation);\r\n\r\n\t\t// Set MuzzleOffset to spawn projectiles slightly in front of the camera.\r\n\t\tMuzzleOffset.Set(100.0f, 0.0f, 0.0f);\r\n\r\n\t\t// Transform MuzzleOffset from camera space to world space.\r\n\t\tFVector MuzzleLocation = CameraLocation + FTransform(CameraRotation).TransformVector(MuzzleOffset);\r\n\r\n\t\t// Skew the aim to be slightly upwards. \r\n\t\tFRotator MuzzleRotation = CameraRotation;\r\n\t\tMuzzleRotation.Pitch += 10.0f;\r\n\r\n\t\tUWorld* World = GetWorld();\r\n\t\tif (World)\r\n\t\t{\r\n\t\t\tFActorSpawnParameters SpawnParams;\r\n\t\t\tSpawnParams.Owner = this;\r\n\t\t\tSpawnParams.Instigator = GetInstigator();\r\n\r\n\t\t\t// Spawn the projectile at the muzzle.\r\n\t\t\tAGunProjectile* Projectile = World->SpawnActor<AGunProjectile>(ProjectileClass, MuzzleLocation, MuzzleRotation, SpawnParams);\r\n\t\t\tif (Projectile)\r\n\t\t\t{\r\n\t\t\t\t// Set the projectile's initial trajectory.\r\n\t\t\t\tFVector LaunchDirection = MuzzleRotation.Vector();\r\n\t\t\t\tProjectile->FireInDirection(LaunchDirection);\r\n\t\t\t}\r\n\r\n\t\t}\r\n\t}\r\n}\r\n
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/Source/CodenameNull/CodenameNullCharacter.cpp b/Source/CodenameNull/CodenameNullCharacter.cpp
+--- a/Source/CodenameNull/CodenameNullCharacter.cpp	(revision 3a2fcb36881e944c2ec8482a0f7101ee72eef389)
++++ b/Source/CodenameNull/CodenameNullCharacter.cpp	(date 1614917267483)
+@@ -13,6 +13,7 @@
+ //////Interactable headers//////
+ #include "Master_Interactable.h"
+ #include "DrawDebugHelpers.h"
++#include "SphericalRadar.h"
+ ////End Interactable headers////
+ 
+ //////////////////////////////////////////////////////////////////////////
+@@ -87,25 +88,6 @@
+ 	PlayerInputComponent->BindAction("Fire", IE_Pressed, this, &ACodenameNullCharacter::Fire);
+ }
+ 
+-void ACodenameNullCharacter::Interact()
+-{
+-	FHitResult OutHit;
+-	FVector Start = GetActorLocation();
+-	FVector End = Start - GetActorLocation() - GetActorForwardVector()*500;
+-	if(GetWorld()->LineTraceSingleByChannel(OutHit, Start, End, ECC_Visibility))
+-	{
+-		AMaster_Interactable* Obj = Cast<AMaster_Interactable>(OutHit.Actor);
+-		
+-		if(Obj)
+-		{
+-			DrawDebugLine(GetWorld(), OutHit.TraceStart, Obj->GetActorLocation(), FColor::Red, false, 1.0f, 0, 10.0f);
+-			UE_LOG(LogTemp, Warning, TEXT("line Hit"));
+-			Obj->Interact();
+-		}
+-	}
+-}
+-
+-
+ void ACodenameNullCharacter::OnResetVR()
+ {
+ 	UHeadMountedDisplayFunctionLibrary::ResetOrientationAndPosition();
+@@ -162,16 +144,28 @@
+ 	}
+ }
+ 
++void ACodenameNullCharacter::LookAt()
++{
++	GetActorEyesViewPoint(CameraLocation, CameraRotation);
++	LookStart = CameraLocation;
++	LookForward =  CameraRotation.Vector();
++	LookEnd = ((LookForward * 200.0f) + LookStart);
++	DrawDebugLine(GetWorld(), LookStart, LookEnd, FColor::Red, false, 1, 0, 1);
++}
++
+ void ACodenameNullCharacter::Fire()
+ {
+ 	// Attempt to fire a projectile.
+ 	if (ProjectileClass)
+ 	{
+ 		// Get the camera transform.
+-		FVector CameraLocation;
+-		FRotator CameraRotation;
+-		GetActorEyesViewPoint(CameraLocation, CameraRotation);
++		//FVector CameraLocation;
++		//FRotator CameraRotation;
++		//GetActorEyesViewPoint(CameraLocation, CameraRotation);
+ 
++		//Look at function stores the camera location and rotation. Refactored to be accessed for other functions such as interact.
++        LookAt();
++		
+ 		// Set MuzzleOffset to spawn projectiles slightly in front of the camera.
+ 		MuzzleOffset.Set(100.0f, 0.0f, 0.0f);
+ 
+@@ -201,3 +195,33 @@
+ 		}
+ 	}
+ }
++
++void ACodenameNullCharacter::Interact()
++{
++    LookAt();
++	FHitResult OutHit;
++
++	UWorld* World = GetWorld();
++	if (World)
++	{
++		FActorSpawnParameters SpawnParams;
++		SpawnParams.Owner = this;
++		SpawnParams.Instigator = GetInstigator();
++
++		// Spawn the projectile at the muzzle.
++		ASphericalRadar* Radar = World->SpawnActor<ASphericalRadar>(GetActorLocation(), GetActorRotation(), SpawnParams);
++
++	}
++
++	
++	if(GetWorld()->LineTraceSingleByChannel(OutHit, LookStart, LookEnd, ECC_Visibility))
++	{
++		AMaster_Interactable* Obj = Cast<AMaster_Interactable>(OutHit.Actor);
++		if(Obj)
++		{
++			UE_LOG(LogClass, Log, TEXT("This a testing statement. %s"), *Obj->GetName());
++			Obj->Interact();
++		}
++	}
++}
++
+Index: Source/CodenameNull/CodenameNullCharacter.h
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.BaseRevisionTextPatchEP
+<+>// Copyright Epic Games, Inc. All Rights Reserved.\r\n\r\n#pragma once\r\n\r\n#include \"CoreMinimal.h\"\r\n#include \"GameFramework/Character.h\"\r\n#include \"GunProjectile.h\"\r\n#include \"Camera/CameraComponent.h\"\r\n#include \"Components/CapsuleComponent.h\"\r\n#include \"CodenameNullCharacter.generated.h\"\r\n\r\nUCLASS(config=Game)\r\nclass ACodenameNullCharacter : public ACharacter\r\n{\r\n\tGENERATED_BODY()\r\n\r\n\t/** Camera boom positioning the camera behind the character */\r\n\tUPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = Camera, meta = (AllowPrivateAccess = \"true\"))\r\n\tclass USpringArmComponent* CameraBoom;\r\n\r\n\t/** Follow camera */\r\n\tUPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = Camera, meta = (AllowPrivateAccess = \"true\"))\r\n\tclass UCameraComponent* FollowCamera;\r\npublic:\r\n\tACodenameNullCharacter();\r\n\r\n\t/** Base turn rate, in deg/sec. Other scaling may affect final turn rate. */\r\n\tUPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category=Camera)\r\n\tfloat BaseTurnRate;\r\n\r\n\t/** Base look up/down rate, in deg/sec. Other scaling may affect final rate. */\r\n\tUPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category=Camera)\r\n\tfloat BaseLookUpRate;\r\n\r\nprotected:\r\n\r\n\t/** Resets HMD orientation in VR. */\r\n\tvoid OnResetVR();\r\n\r\n\t/** Called for forwards/backward input */\r\n\tvoid MoveForward(float Value);\r\n\r\n\t/** Called for side to side input */\r\n\tvoid MoveRight(float Value);\r\n\r\n\t/** \r\n\t * Called via input to turn at a given rate. \r\n\t * @param Rate\tThis is a normalized rate, i.e. 1.0 means 100% of desired turn rate\r\n\t */\r\n\tvoid TurnAtRate(float Rate);\r\n\r\n\t/**\r\n\t * Called via input to turn look up/down at a given rate. \r\n\t * @param Rate\tThis is a normalized rate, i.e. 1.0 means 100% of desired turn rate\r\n\t */\r\n\tvoid LookUpAtRate(float Rate);\r\n\r\n\t/** Handler for when a touch input begins. */\r\n\tvoid TouchStarted(ETouchIndex::Type FingerIndex, FVector Location);\r\n\r\n\t/** Handler for when a touch input stops. */\r\n\tvoid TouchStopped(ETouchIndex::Type FingerIndex, FVector Location);\r\n\r\n\t// Projectile class to spawn.\r\n\tUPROPERTY(EditAnywhere, Category = Projectile)\r\n\t\tTSubclassOf<class AGunProjectile> ProjectileClass;\r\n\r\n\t// Function that fires projectiles.\r\n\tUFUNCTION()\r\n\t\tvoid Fire();\r\n\r\n\t// Gun muzzle offset from the camera location.\r\n\tUPROPERTY(EditAnywhere, BlueprintReadWrite, Category = Gameplay)\r\n\t\tFVector MuzzleOffset;\r\n\r\nprotected:\r\n\t// APawn interface\r\n\tvirtual void SetupPlayerInputComponent(class UInputComponent* PlayerInputComponent) override;\r\n\t// End of APawn interface\r\n\r\n\t//Interaction System\r\n\tvoid Interact();\r\n\r\npublic:\r\n\t/** Returns CameraBoom subobject **/\r\n\tFORCEINLINE class USpringArmComponent* GetCameraBoom() const { return CameraBoom; }\r\n\t/** Returns FollowCamera subobject **/\r\n\tFORCEINLINE class UCameraComponent* GetFollowCamera() const { return FollowCamera; }\r\n};\r\n\r\n
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/Source/CodenameNull/CodenameNullCharacter.h b/Source/CodenameNull/CodenameNullCharacter.h
+--- a/Source/CodenameNull/CodenameNullCharacter.h	(revision 3a2fcb36881e944c2ec8482a0f7101ee72eef389)
++++ b/Source/CodenameNull/CodenameNullCharacter.h	(date 1614548438155)
+@@ -73,14 +73,27 @@
+ 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = Gameplay)
+ 		FVector MuzzleOffset;
+ 
++	//================================
++	//Require camera info for Fire(), Interact(), LookAt()
++	FVector CameraLocation;
++	FRotator CameraRotation;
++
++	//Look at
++	FVector LookStart;
++    FVector LookEnd;
++    FVector LookForward;
++//===============================
+ protected:
+ 	// APawn interface
+ 	virtual void SetupPlayerInputComponent(class UInputComponent* PlayerInputComponent) override;
+ 	// End of APawn interface
+-
++//========================================
+ 	//Interaction System
+ 	void Interact();
+ 
++	//Look at
++	void LookAt();
++//========================================
+ public:
+ 	/** Returns CameraBoom subobject **/
+ 	FORCEINLINE class USpringArmComponent* GetCameraBoom() const { return CameraBoom; }
+Index: Source/CodenameNull/Master_Interactable.cpp
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.BaseRevisionTextPatchEP
+<+>// Fill out your copyright notice in the Description page of Project Settings.\r\n\r\n\r\n#include \"Master_Interactable.h\"\r\n\r\n// Sets default values\r\nAMaster_Interactable::AMaster_Interactable()\r\n{\r\n \t// Set this actor to call Tick() every frame.  You can turn this off to improve performance if you don't need it.\r\n\tPrimaryActorTick.bCanEverTick = true;\r\n\r\n\t_RootComponent = CreateDefaultSubobject<USceneComponent>(TEXT(\"Root Component\"));\r\n\tRootComponent = _RootComponent;\r\n\r\n\tMesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT(\"Mesh\"));\r\n\tMesh->SetupAttachment(RootComponent);\r\n}\r\n\r\n\r\n\r\n// Called when the game starts or when spawned\r\nvoid AMaster_Interactable::BeginPlay()\r\n{\r\n\tSuper::BeginPlay();\r\n\t\r\n}\r\n\r\n// Called every frame\r\nvoid AMaster_Interactable::Tick(float DeltaTime)\r\n{\r\n\tSuper::Tick(DeltaTime);\r\n\r\n}\r\n\r\n
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/Source/CodenameNull/Master_Interactable.cpp b/Source/CodenameNull/Master_Interactable.cpp
+--- a/Source/CodenameNull/Master_Interactable.cpp	(revision 3a2fcb36881e944c2ec8482a0f7101ee72eef389)
++++ b/Source/CodenameNull/Master_Interactable.cpp	(date 1614502384998)
+@@ -29,6 +29,6 @@
+ void AMaster_Interactable::Tick(float DeltaTime)
+ {
+ 	Super::Tick(DeltaTime);
+-
++	
+ }
+ 
+Index: Source/CodenameNull/SphericalRadar.cpp
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/Source/CodenameNull/SphericalRadar.cpp b/Source/CodenameNull/SphericalRadar.cpp
+new file mode 100644
+--- /dev/null	(date 1614918154666)
++++ b/Source/CodenameNull/SphericalRadar.cpp	(date 1614918154666)
+@@ -0,0 +1,51 @@
++// Fill out your copyright notice in the Description page of Project Settings.
++
++
++#include "SphericalRadar.h"
++
++#include "DrawDebugHelpers.h"
++
++// Sets default values
++ASphericalRadar::ASphericalRadar()
++{
++ 	// Set this actor to call Tick() every frame.  You can turn this off to improve performance if you don't need it.
++	PrimaryActorTick.bCanEverTick = true;
++
++}
++
++// Called when the game starts or when spawned
++void ASphericalRadar::BeginPlay()
++{
++	Super::BeginPlay();
++
++	SetLifeSpan(3);
++	TArray<FHitResult> OutHits;
++
++	FVector ActorLocation = GetActorLocation();
++
++	FCollisionShape MyCollSphere = FCollisionShape::MakeSphere(500.0f);
++
++	DrawDebugSphere(GetWorld(), ActorLocation, MyCollSphere.GetSphereRadius(), 100, FColor::Green, true ,3);
++
++	bool isHit = GetWorld()->SweepMultiByChannel(OutHits, ActorLocation, ActorLocation, FQuat::Identity, ECC_WorldStatic, MyCollSphere);
++
++	if(isHit)
++	{
++		for(auto& Hit : OutHits)
++		{
++			if(GEngine)
++			{
++				GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Green, FString::Printf(TEXT("Hit Result: %s"), *Hit.Actor->GetName()));
++			}
++		}
++	}
++	
++}
++
++// Called every frame
++void ASphericalRadar::Tick(float DeltaTime)
++{
++	Super::Tick(DeltaTime);
++
++}
++
+Index: Source/CodenameNull/Master_Interactable.h
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.BaseRevisionTextPatchEP
+<+>// Fill out your copyright notice in the Description page of Project Settings.\r\n\r\n#pragma once\r\n\r\n#include \"CoreMinimal.h\"\r\n#include \"GameFramework/Actor.h\"\r\n#include \"Components/SceneComponent.h\"\r\n#include \"Master_Interactable.generated.h\"\r\n\r\nUCLASS()\r\nclass CODENAMENULL_API AMaster_Interactable : public AActor\r\n{\r\n\tGENERATED_BODY()\r\n\t\r\npublic:\t\r\n\t// Sets default values for this actor's properties\r\n\tAMaster_Interactable();\r\n\r\nprotected:\r\n\t// Called when the game starts or when spawned\r\n\tvirtual void BeginPlay() override;\r\n\t\r\n\r\npublic:\t\r\n\t// Called every frame\r\n\tvirtual void Tick(float DeltaTime) override;\r\n\r\n\tvirtual void Interact() PURE_VIRTUAL(AMaster_Interactable::Interact, );\r\n\t\r\n\tUPROPERTY(EditAnywhere, BlueprintReadOnly)\r\n\tUSceneComponent* _RootComponent;\r\n\r\n\tUPROPERTY(EditAnywhere, BlueprintReadWrite)\t\r\n\tUStaticMeshComponent* Mesh;\r\n};\r\n
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/Source/CodenameNull/Master_Interactable.h b/Source/CodenameNull/Master_Interactable.h
+--- a/Source/CodenameNull/Master_Interactable.h	(revision 3a2fcb36881e944c2ec8482a0f7101ee72eef389)
++++ b/Source/CodenameNull/Master_Interactable.h	(date 1614503548558)
+@@ -5,6 +5,8 @@
+ #include "CoreMinimal.h"
+ #include "GameFramework/Actor.h"
+ #include "Components/SceneComponent.h"
++#include "Camera/CameraComponent.h"
++#include "DrawDebugHelpers.h"
+ #include "Master_Interactable.generated.h"
+ 
+ UCLASS()
+@@ -15,7 +17,7 @@
+ public:	
+ 	// Sets default values for this actor's properties
+ 	AMaster_Interactable();
+-
++	
+ protected:
+ 	// Called when the game starts or when spawned
+ 	virtual void BeginPlay() override;
+Index: Source/CodenameNull/SphericalRadar.h
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/Source/CodenameNull/SphericalRadar.h b/Source/CodenameNull/SphericalRadar.h
+new file mode 100644
+--- /dev/null	(date 1614912784313)
++++ b/Source/CodenameNull/SphericalRadar.h	(date 1614912784313)
+@@ -0,0 +1,26 @@
++// Fill out your copyright notice in the Description page of Project Settings.
++
++#pragma once
++
++#include "CoreMinimal.h"
++#include "GameFramework/Actor.h"
++#include "SphericalRadar.generated.h"
++
++UCLASS()
++class CODENAMENULL_API ASphericalRadar : public AActor
++{
++	GENERATED_BODY()
++	
++public:	
++	// Sets default values for this actor's properties
++	ASphericalRadar();
++
++protected:
++	// Called when the game starts or when spawned
++	virtual void BeginPlay() override;
++
++public:	
++	// Called every frame
++	virtual void Tick(float DeltaTime) override;
++
++};
+Index: Source/CodenameNull/Interactable_Ladder.cpp
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/Source/CodenameNull/Interactable_Ladder.cpp b/Source/CodenameNull/Interactable_Ladder.cpp
+new file mode 100644
+--- /dev/null	(date 1614459681600)
++++ b/Source/CodenameNull/Interactable_Ladder.cpp	(date 1614459681600)
+@@ -0,0 +1,13 @@
++// Fill out your copyright notice in the Description page of Project Settings.
++
++
++#include "Interactable_Ladder.h"
++
++void AInteractable_Ladder::Interact()
++{
++}
++
++AInteractable_Ladder::AInteractable_Ladder()
++{
++	
++}
+Index: Config/DefaultEngine.ini
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.BaseRevisionTextPatchEP
+<+>[/Script/EngineSettings.GameMapsSettings]\r\nGameDefaultMap=/Game/ThirdPersonCPP/Maps/ThirdPersonExampleMap\r\nEditorStartupMap=/Game/ThirdPersonCPP/Maps/ThirdPersonExampleMap.ThirdPersonExampleMap\r\nGlobalDefaultGameMode=/Script/CodenameNull.CodenameNullGameMode\r\n\r\n[/Script/IOSRuntimeSettings.IOSRuntimeSettings]\r\nMinimumiOSVersion=IOS_11\r\n\r\n[/Script/HardwareTargeting.HardwareTargetingSettings]\r\nTargetedHardwareClass=Desktop\r\nAppliedTargetedHardwareClass=Desktop\r\nDefaultGraphicsPerformance=Maximum\r\nAppliedDefaultGraphicsPerformance=Maximum\r\n\r\n[/Script/Engine.Engine]\r\n+ActiveGameNameRedirects=(OldGameName=\"TP_ThirdPerson\",NewGameName=\"/Script/CodenameNull\")\r\n+ActiveGameNameRedirects=(OldGameName=\"/Script/TP_ThirdPerson\",NewGameName=\"/Script/CodenameNull\")\r\n+ActiveClassRedirects=(OldClassName=\"TP_ThirdPersonGameMode\",NewClassName=\"CodenameNullGameMode\")\r\n+ActiveClassRedirects=(OldClassName=\"TP_ThirdPersonCharacter\",NewClassName=\"CodenameNullCharacter\")\r\n\r\n[/Script/PythonScriptPlugin.PythonScriptPluginSettings]\r\nbRemoteExecution=True\r\n\r\n[/Script/Engine.RendererSettings]\r\nr.SkinCache.CompileShaders=True\r\nr.RayTracing=False\r\n\r\n[/Script/Engine.CollisionProfile]\r\n-Profiles=(Name=\"NoCollision\",CollisionEnabled=NoCollision,ObjectTypeName=\"WorldStatic\",CustomResponses=((Channel=\"Visibility\",Response=ECR_Ignore),(Channel=\"Camera\",Response=ECR_Ignore)),HelpMessage=\"No collision\",bCanModify=False)\r\n-Profiles=(Name=\"BlockAll\",CollisionEnabled=QueryAndPhysics,ObjectTypeName=\"WorldStatic\",CustomResponses=,HelpMessage=\"WorldStatic object that blocks all actors by default. All new custom channels will use its own default response. \",bCanModify=False)\r\n-Profiles=(Name=\"OverlapAll\",CollisionEnabled=QueryOnly,ObjectTypeName=\"WorldStatic\",CustomResponses=((Channel=\"WorldStatic\",Response=ECR_Overlap),(Channel=\"Pawn\",Response=ECR_Overlap),(Channel=\"Visibility\",Response=ECR_Overlap),(Channel=\"WorldDynamic\",Response=ECR_Overlap),(Channel=\"Camera\",Response=ECR_Overlap),(Channel=\"PhysicsBody\",Response=ECR_Overlap),(Channel=\"Vehicle\",Response=ECR_Overlap),(Channel=\"Destructible\",Response=ECR_Overlap)),HelpMessage=\"WorldStatic object that overlaps all actors by default. All new custom channels will use its own default response. \",bCanModify=False)\r\n-Profiles=(Name=\"BlockAllDynamic\",CollisionEnabled=QueryAndPhysics,ObjectTypeName=\"WorldDynamic\",CustomResponses=,HelpMessage=\"WorldDynamic object that blocks all actors by default. All new custom channels will use its own default response. \",bCanModify=False)\r\n-Profiles=(Name=\"OverlapAllDynamic\",CollisionEnabled=QueryOnly,ObjectTypeName=\"WorldDynamic\",CustomResponses=((Channel=\"WorldStatic\",Response=ECR_Overlap),(Channel=\"Pawn\",Response=ECR_Overlap),(Channel=\"Visibility\",Response=ECR_Overlap),(Channel=\"WorldDynamic\",Response=ECR_Overlap),(Channel=\"Camera\",Response=ECR_Overlap),(Channel=\"PhysicsBody\",Response=ECR_Overlap),(Channel=\"Vehicle\",Response=ECR_Overlap),(Channel=\"Destructible\",Response=ECR_Overlap)),HelpMessage=\"WorldDynamic object that overlaps all actors by default. All new custom channels will use its own default response. \",bCanModify=False)\r\n-Profiles=(Name=\"IgnoreOnlyPawn\",CollisionEnabled=QueryOnly,ObjectTypeName=\"WorldDynamic\",CustomResponses=((Channel=\"Pawn\",Response=ECR_Ignore),(Channel=\"Vehicle\",Response=ECR_Ignore)),HelpMessage=\"WorldDynamic object that ignores Pawn and Vehicle. All other channels will be set to default.\",bCanModify=False)\r\n-Profiles=(Name=\"OverlapOnlyPawn\",CollisionEnabled=QueryOnly,ObjectTypeName=\"WorldDynamic\",CustomResponses=((Channel=\"Pawn\",Response=ECR_Overlap),(Channel=\"Vehicle\",Response=ECR_Overlap),(Channel=\"Camera\",Response=ECR_Ignore)),HelpMessage=\"WorldDynamic object that overlaps Pawn, Camera, and Vehicle. All other channels will be set to default. \",bCanModify=False)\r\n-Profiles=(Name=\"Pawn\",CollisionEnabled=QueryAndPhysics,ObjectTypeName=\"Pawn\",CustomResponses=((Channel=\"Visibility\",Response=ECR_Ignore)),HelpMessage=\"Pawn object. Can be used for capsule of any playerable character or AI. \",bCanModify=False)\r\n-Profiles=(Name=\"Spectator\",CollisionEnabled=QueryOnly,ObjectTypeName=\"Pawn\",CustomResponses=((Channel=\"WorldStatic\",Response=ECR_Block),(Channel=\"Pawn\",Response=ECR_Ignore),(Channel=\"Visibility\",Response=ECR_Ignore),(Channel=\"WorldDynamic\",Response=ECR_Ignore),(Channel=\"Camera\",Response=ECR_Ignore),(Channel=\"PhysicsBody\",Response=ECR_Ignore),(Channel=\"Vehicle\",Response=ECR_Ignore),(Channel=\"Destructible\",Response=ECR_Ignore)),HelpMessage=\"Pawn object that ignores all other actors except WorldStatic.\",bCanModify=False)\r\n-Profiles=(Name=\"CharacterMesh\",CollisionEnabled=QueryOnly,ObjectTypeName=\"Pawn\",CustomResponses=((Channel=\"Pawn\",Response=ECR_Ignore),(Channel=\"Vehicle\",Response=ECR_Ignore),(Channel=\"Visibility\",Response=ECR_Ignore)),HelpMessage=\"Pawn object that is used for Character Mesh. All other channels will be set to default.\",bCanModify=False)\r\n-Profiles=(Name=\"PhysicsActor\",CollisionEnabled=QueryAndPhysics,ObjectTypeName=\"PhysicsBody\",CustomResponses=,HelpMessage=\"Simulating actors\",bCanModify=False)\r\n-Profiles=(Name=\"Destructible\",CollisionEnabled=QueryAndPhysics,ObjectTypeName=\"Destructible\",CustomResponses=,HelpMessage=\"Destructible actors\",bCanModify=False)\r\n-Profiles=(Name=\"InvisibleWall\",CollisionEnabled=QueryAndPhysics,ObjectTypeName=\"WorldStatic\",CustomResponses=((Channel=\"Visibility\",Response=ECR_Ignore)),HelpMessage=\"WorldStatic object that is invisible.\",bCanModify=False)\r\n-Profiles=(Name=\"InvisibleWallDynamic\",CollisionEnabled=QueryAndPhysics,ObjectTypeName=\"WorldDynamic\",CustomResponses=((Channel=\"Visibility\",Response=ECR_Ignore)),HelpMessage=\"WorldDynamic object that is invisible.\",bCanModify=False)\r\n-Profiles=(Name=\"Trigger\",CollisionEnabled=QueryOnly,ObjectTypeName=\"WorldDynamic\",CustomResponses=((Channel=\"WorldStatic\",Response=ECR_Overlap),(Channel=\"Pawn\",Response=ECR_Overlap),(Channel=\"Visibility\",Response=ECR_Ignore),(Channel=\"WorldDynamic\",Response=ECR_Overlap),(Channel=\"Camera\",Response=ECR_Overlap),(Channel=\"PhysicsBody\",Response=ECR_Overlap),(Channel=\"Vehicle\",Response=ECR_Overlap),(Channel=\"Destructible\",Response=ECR_Overlap)),HelpMessage=\"WorldDynamic object that is used for trigger. All other channels will be set to default.\",bCanModify=False)\r\n-Profiles=(Name=\"Ragdoll\",CollisionEnabled=QueryAndPhysics,ObjectTypeName=\"PhysicsBody\",CustomResponses=((Channel=\"Pawn\",Response=ECR_Ignore),(Channel=\"Visibility\",Response=ECR_Ignore)),HelpMessage=\"Simulating Skeletal Mesh Component. All other channels will be set to default.\",bCanModify=False)\r\n-Profiles=(Name=\"Vehicle\",CollisionEnabled=QueryAndPhysics,ObjectTypeName=\"Vehicle\",CustomResponses=,HelpMessage=\"Vehicle object that blocks Vehicle, WorldStatic, and WorldDynamic. All other channels will be set to default.\",bCanModify=False)\r\n-Profiles=(Name=\"UI\",CollisionEnabled=QueryOnly,ObjectTypeName=\"WorldDynamic\",CustomResponses=((Channel=\"WorldStatic\",Response=ECR_Overlap),(Channel=\"Pawn\",Response=ECR_Overlap),(Channel=\"Visibility\",Response=ECR_Block),(Channel=\"WorldDynamic\",Response=ECR_Overlap),(Channel=\"Camera\",Response=ECR_Overlap),(Channel=\"PhysicsBody\",Response=ECR_Overlap),(Channel=\"Vehicle\",Response=ECR_Overlap),(Channel=\"Destructible\",Response=ECR_Overlap)),HelpMessage=\"WorldStatic object that overlaps all actors by default. All new custom channels will use its own default response. \",bCanModify=False)\r\n+Profiles=(Name=\"NoCollision\",CollisionEnabled=NoCollision,bCanModify=False,ObjectTypeName=\"WorldStatic\",CustomResponses=((Channel=\"Visibility\",Response=ECR_Ignore),(Channel=\"Camera\",Response=ECR_Ignore)),HelpMessage=\"No collision\")\r\n+Profiles=(Name=\"BlockAll\",CollisionEnabled=QueryAndPhysics,bCanModify=False,ObjectTypeName=\"WorldStatic\",CustomResponses=,HelpMessage=\"WorldStatic object that blocks all actors by default. All new custom channels will use its own default response. \")\r\n+Profiles=(Name=\"OverlapAll\",CollisionEnabled=QueryOnly,bCanModify=False,ObjectTypeName=\"WorldStatic\",CustomResponses=((Channel=\"WorldStatic\",Response=ECR_Overlap),(Channel=\"Pawn\",Response=ECR_Overlap),(Channel=\"Visibility\",Response=ECR_Overlap),(Channel=\"WorldDynamic\",Response=ECR_Overlap),(Channel=\"Camera\",Response=ECR_Overlap),(Channel=\"PhysicsBody\",Response=ECR_Overlap),(Channel=\"Vehicle\",Response=ECR_Overlap),(Channel=\"Destructible\",Response=ECR_Overlap)),HelpMessage=\"WorldStatic object that overlaps all actors by default. All new custom channels will use its own default response. \")\r\n+Profiles=(Name=\"BlockAllDynamic\",CollisionEnabled=QueryAndPhysics,bCanModify=False,ObjectTypeName=\"WorldDynamic\",CustomResponses=,HelpMessage=\"WorldDynamic object that blocks all actors by default. All new custom channels will use its own default response. \")\r\n+Profiles=(Name=\"OverlapAllDynamic\",CollisionEnabled=QueryOnly,bCanModify=False,ObjectTypeName=\"WorldDynamic\",CustomResponses=((Channel=\"WorldStatic\",Response=ECR_Overlap),(Channel=\"Pawn\",Response=ECR_Overlap),(Channel=\"Visibility\",Response=ECR_Overlap),(Channel=\"WorldDynamic\",Response=ECR_Overlap),(Channel=\"Camera\",Response=ECR_Overlap),(Channel=\"PhysicsBody\",Response=ECR_Overlap),(Channel=\"Vehicle\",Response=ECR_Overlap),(Channel=\"Destructible\",Response=ECR_Overlap)),HelpMessage=\"WorldDynamic object that overlaps all actors by default. All new custom channels will use its own default response. \")\r\n+Profiles=(Name=\"IgnoreOnlyPawn\",CollisionEnabled=QueryOnly,bCanModify=False,ObjectTypeName=\"WorldDynamic\",CustomResponses=((Channel=\"Pawn\",Response=ECR_Ignore),(Channel=\"Vehicle\",Response=ECR_Ignore)),HelpMessage=\"WorldDynamic object that ignores Pawn and Vehicle. All other channels will be set to default.\")\r\n+Profiles=(Name=\"OverlapOnlyPawn\",CollisionEnabled=QueryOnly,bCanModify=False,ObjectTypeName=\"WorldDynamic\",CustomResponses=((Channel=\"Pawn\",Response=ECR_Overlap),(Channel=\"Vehicle\",Response=ECR_Overlap),(Channel=\"Camera\",Response=ECR_Ignore)),HelpMessage=\"WorldDynamic object that overlaps Pawn, Camera, and Vehicle. All other channels will be set to default. \")\r\n+Profiles=(Name=\"Pawn\",CollisionEnabled=QueryAndPhysics,bCanModify=False,ObjectTypeName=\"Pawn\",CustomResponses=((Channel=\"Visibility\",Response=ECR_Ignore)),HelpMessage=\"Pawn object. Can be used for capsule of any playerable character or AI. \")\r\n+Profiles=(Name=\"Spectator\",CollisionEnabled=QueryOnly,bCanModify=False,ObjectTypeName=\"Pawn\",CustomResponses=((Channel=\"WorldStatic\"),(Channel=\"Pawn\",Response=ECR_Ignore),(Channel=\"Visibility\",Response=ECR_Ignore),(Channel=\"WorldDynamic\",Response=ECR_Ignore),(Channel=\"Camera\",Response=ECR_Ignore),(Channel=\"PhysicsBody\",Response=ECR_Ignore),(Channel=\"Vehicle\",Response=ECR_Ignore),(Channel=\"Destructible\",Response=ECR_Ignore)),HelpMessage=\"Pawn object that ignores all other actors except WorldStatic.\")\r\n+Profiles=(Name=\"CharacterMesh\",CollisionEnabled=QueryOnly,bCanModify=False,ObjectTypeName=\"Pawn\",CustomResponses=((Channel=\"Pawn\",Response=ECR_Ignore),(Channel=\"Vehicle\",Response=ECR_Ignore),(Channel=\"Visibility\",Response=ECR_Ignore)),HelpMessage=\"Pawn object that is used for Character Mesh. All other channels will be set to default.\")\r\n+Profiles=(Name=\"PhysicsActor\",CollisionEnabled=QueryAndPhysics,bCanModify=False,ObjectTypeName=\"PhysicsBody\",CustomResponses=,HelpMessage=\"Simulating actors\")\r\n+Profiles=(Name=\"Destructible\",CollisionEnabled=QueryAndPhysics,bCanModify=False,ObjectTypeName=\"Destructible\",CustomResponses=,HelpMessage=\"Destructible actors\")\r\n+Profiles=(Name=\"InvisibleWall\",CollisionEnabled=QueryAndPhysics,bCanModify=False,ObjectTypeName=\"WorldStatic\",CustomResponses=((Channel=\"Visibility\",Response=ECR_Ignore)),HelpMessage=\"WorldStatic object that is invisible.\")\r\n+Profiles=(Name=\"InvisibleWallDynamic\",CollisionEnabled=QueryAndPhysics,bCanModify=False,ObjectTypeName=\"WorldDynamic\",CustomResponses=((Channel=\"Visibility\",Response=ECR_Ignore)),HelpMessage=\"WorldDynamic object that is invisible.\")\r\n+Profiles=(Name=\"Trigger\",CollisionEnabled=QueryOnly,bCanModify=False,ObjectTypeName=\"WorldDynamic\",CustomResponses=((Channel=\"WorldStatic\",Response=ECR_Overlap),(Channel=\"Pawn\",Response=ECR_Overlap),(Channel=\"Visibility\",Response=ECR_Ignore),(Channel=\"WorldDynamic\",Response=ECR_Overlap),(Channel=\"Camera\",Response=ECR_Overlap),(Channel=\"PhysicsBody\",Response=ECR_Overlap),(Channel=\"Vehicle\",Response=ECR_Overlap),(Channel=\"Destructible\",Response=ECR_Overlap)),HelpMessage=\"WorldDynamic object that is used for trigger. All other channels will be set to default.\")\r\n+Profiles=(Name=\"Ragdoll\",CollisionEnabled=QueryAndPhysics,bCanModify=False,ObjectTypeName=\"PhysicsBody\",CustomResponses=((Channel=\"Pawn\",Response=ECR_Ignore),(Channel=\"Visibility\",Response=ECR_Ignore)),HelpMessage=\"Simulating Skeletal Mesh Component. All other channels will be set to default.\")\r\n+Profiles=(Name=\"Vehicle\",CollisionEnabled=QueryAndPhysics,bCanModify=False,ObjectTypeName=\"Vehicle\",CustomResponses=,HelpMessage=\"Vehicle object that blocks Vehicle, WorldStatic, and WorldDynamic. All other channels will be set to default.\")\r\n+Profiles=(Name=\"UI\",CollisionEnabled=QueryOnly,bCanModify=False,ObjectTypeName=\"WorldDynamic\",CustomResponses=((Channel=\"WorldStatic\",Response=ECR_Overlap),(Channel=\"Pawn\",Response=ECR_Overlap),(Channel=\"Visibility\"),(Channel=\"WorldDynamic\",Response=ECR_Overlap),(Channel=\"Camera\",Response=ECR_Overlap),(Channel=\"PhysicsBody\",Response=ECR_Overlap),(Channel=\"Vehicle\",Response=ECR_Overlap),(Channel=\"Destructible\",Response=ECR_Overlap)),HelpMessage=\"WorldStatic object that overlaps all actors by default. All new custom channels will use its own default response. \")\r\n+Profiles=(Name=\"Projectile\",CollisionEnabled=QueryAndPhysics,bCanModify=True,ObjectTypeName=\"Projectile\",CustomResponses=((Channel=\"Pawn\",Response=ECR_Overlap)),HelpMessage=\"Our projectile collision profile\")\r\n+DefaultChannelResponses=(Channel=ECC_GameTraceChannel1,DefaultResponse=ECR_Block,bTraceType=False,bStaticObject=False,Name=\"Projectile\")\r\n-ProfileRedirects=(OldName=\"BlockingVolume\",NewName=\"InvisibleWall\")\r\n-ProfileRedirects=(OldName=\"InterpActor\",NewName=\"IgnoreOnlyPawn\")\r\n-ProfileRedirects=(OldName=\"StaticMeshComponent\",NewName=\"BlockAllDynamic\")\r\n-ProfileRedirects=(OldName=\"SkeletalMeshActor\",NewName=\"PhysicsActor\")\r\n-ProfileRedirects=(OldName=\"InvisibleActor\",NewName=\"InvisibleWallDynamic\")\r\n+ProfileRedirects=(OldName=\"BlockingVolume\",NewName=\"InvisibleWall\")\r\n+ProfileRedirects=(OldName=\"InterpActor\",NewName=\"IgnoreOnlyPawn\")\r\n+ProfileRedirects=(OldName=\"StaticMeshComponent\",NewName=\"BlockAllDynamic\")\r\n+ProfileRedirects=(OldName=\"SkeletalMeshActor\",NewName=\"PhysicsActor\")\r\n+ProfileRedirects=(OldName=\"InvisibleActor\",NewName=\"InvisibleWallDynamic\")\r\n-CollisionChannelRedirects=(OldName=\"Static\",NewName=\"WorldStatic\")\r\n-CollisionChannelRedirects=(OldName=\"Dynamic\",NewName=\"WorldDynamic\")\r\n-CollisionChannelRedirects=(OldName=\"VehicleMovement\",NewName=\"Vehicle\")\r\n-CollisionChannelRedirects=(OldName=\"PawnMovement\",NewName=\"Pawn\")\r\n+CollisionChannelRedirects=(OldName=\"Static\",NewName=\"WorldStatic\")\r\n+CollisionChannelRedirects=(OldName=\"Dynamic\",NewName=\"WorldDynamic\")\r\n+CollisionChannelRedirects=(OldName=\"VehicleMovement\",NewName=\"Vehicle\")\r\n+CollisionChannelRedirects=(OldName=\"PawnMovement\",NewName=\"Pawn\")\r\n\r\n
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/Config/DefaultEngine.ini b/Config/DefaultEngine.ini
+--- a/Config/DefaultEngine.ini	(revision 3a2fcb36881e944c2ec8482a0f7101ee72eef389)
++++ b/Config/DefaultEngine.ini	(date 1614476807214)
+@@ -64,6 +64,7 @@
+ +Profiles=(Name="UI",CollisionEnabled=QueryOnly,bCanModify=False,ObjectTypeName="WorldDynamic",CustomResponses=((Channel="WorldStatic",Response=ECR_Overlap),(Channel="Pawn",Response=ECR_Overlap),(Channel="Visibility"),(Channel="WorldDynamic",Response=ECR_Overlap),(Channel="Camera",Response=ECR_Overlap),(Channel="PhysicsBody",Response=ECR_Overlap),(Channel="Vehicle",Response=ECR_Overlap),(Channel="Destructible",Response=ECR_Overlap)),HelpMessage="WorldStatic object that overlaps all actors by default. All new custom channels will use its own default response. ")
+ +Profiles=(Name="Projectile",CollisionEnabled=QueryAndPhysics,bCanModify=True,ObjectTypeName="Projectile",CustomResponses=((Channel="Pawn",Response=ECR_Overlap)),HelpMessage="Our projectile collision profile")
+ +DefaultChannelResponses=(Channel=ECC_GameTraceChannel1,DefaultResponse=ECR_Block,bTraceType=False,bStaticObject=False,Name="Projectile")
+++DefaultChannelResponses=(Channel=ECC_GameTraceChannel2,DefaultResponse=ECR_Ignore,bTraceType=True,bStaticObject=False,Name="LedgeTrace")
+ -ProfileRedirects=(OldName="BlockingVolume",NewName="InvisibleWall")
+ -ProfileRedirects=(OldName="InterpActor",NewName="IgnoreOnlyPawn")
+ -ProfileRedirects=(OldName="StaticMeshComponent",NewName="BlockAllDynamic")
+Index: Source/CodenameNull/Interactable_light.h
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.BaseRevisionTextPatchEP
+<+>// Fill out your copyright notice in the Description page of Project Settings.\r\n\r\n#pragma once\r\n\r\n#include \"CoreMinimal.h\"\r\n#include \"Master_Interactable.h\"\r\n#include \"Components/SpotLightComponent.h\"\r\n#include \"Interactable_light.generated.h\"\r\n\r\n/**\r\n * \r\n */\r\nUCLASS()\r\nclass CODENAMENULL_API AInteractable_light : public AMaster_Interactable\r\n{\r\n\tGENERATED_BODY()\r\n\r\npublic:\r\n\tvirtual void Interact() override;\r\n\r\n\tUPROPERTY()\r\n\tbool State;\r\n\r\n\tUPROPERTY(EditAnywhere, BlueprintReadOnly)\r\n\tfloat Intensity;\r\n\r\n\tUPROPERTY(EditAnywhere)\r\n\tUSpotLightComponent* Light;\r\n\r\n\tAInteractable_light();\r\n};\r\n
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/Source/CodenameNull/Interactable_light.h b/Source/CodenameNull/Interactable_light.h
+--- a/Source/CodenameNull/Interactable_light.h	(revision 3a2fcb36881e944c2ec8482a0f7101ee72eef389)
++++ b/Source/CodenameNull/Interactable_light.h	(date 1614459681575)
+@@ -16,16 +16,21 @@
+ 	GENERATED_BODY()
+ 
+ public:
++	//override AMaster_Interaction Interact() function
+ 	virtual void Interact() override;
+ 
++	//keeps track of the on/off state of the light
+ 	UPROPERTY()
+-	bool State;
++	bool State; 
+ 
++	//the intensity of the light
+ 	UPROPERTY(EditAnywhere, BlueprintReadOnly)
+ 	float Intensity;
+ 
++	//Spotlight component
+ 	UPROPERTY(EditAnywhere)
+ 	USpotLightComponent* Light;
+ 
++	//Interactable lights functionanlity
+ 	AInteractable_light();
+ };
+Index: Config/DefaultInput.ini
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.BaseRevisionTextPatchEP
+<+>\r\n\r\n[/Script/Engine.InputSettings]\r\n-AxisConfig=(AxisKeyName=\"Gamepad_LeftX\",AxisProperties=(DeadZone=0.25,Exponent=1.f,Sensitivity=1.f))\r\n-AxisConfig=(AxisKeyName=\"Gamepad_LeftY\",AxisProperties=(DeadZone=0.25,Exponent=1.f,Sensitivity=1.f))\r\n-AxisConfig=(AxisKeyName=\"Gamepad_RightX\",AxisProperties=(DeadZone=0.25,Exponent=1.f,Sensitivity=1.f))\r\n-AxisConfig=(AxisKeyName=\"Gamepad_RightY\",AxisProperties=(DeadZone=0.25,Exponent=1.f,Sensitivity=1.f))\r\n-AxisConfig=(AxisKeyName=\"MouseX\",AxisProperties=(DeadZone=0.f,Exponent=1.f,Sensitivity=0.07f))\r\n-AxisConfig=(AxisKeyName=\"MouseY\",AxisProperties=(DeadZone=0.f,Exponent=1.f,Sensitivity=0.07f))\r\n+AxisConfig=(AxisKeyName=\"ValveIndex_Right_Trigger_Axis\",AxisProperties=(DeadZone=0.000000,Sensitivity=1.000000,Exponent=1.000000,bInvert=False))\r\n+AxisConfig=(AxisKeyName=\"ValveIndex_Right_Thumbstick_X\",AxisProperties=(DeadZone=0.000000,Sensitivity=1.000000,Exponent=1.000000,bInvert=False))\r\n+AxisConfig=(AxisKeyName=\"ValveIndex_Right_Thumbstick_Y\",AxisProperties=(DeadZone=0.000000,Sensitivity=1.000000,Exponent=1.000000,bInvert=False))\r\n+AxisConfig=(AxisKeyName=\"ValveIndex_Right_Trackpad_X\",AxisProperties=(DeadZone=0.000000,Sensitivity=1.000000,Exponent=1.000000,bInvert=False))\r\n+AxisConfig=(AxisKeyName=\"ValveIndex_Right_Trackpad_Y\",AxisProperties=(DeadZone=0.000000,Sensitivity=1.000000,Exponent=1.000000,bInvert=False))\r\n+AxisConfig=(AxisKeyName=\"ValveIndex_Right_Trackpad_Force\",AxisProperties=(DeadZone=0.000000,Sensitivity=1.000000,Exponent=1.000000,bInvert=False))\r\n+AxisConfig=(AxisKeyName=\"Gamepad_LeftX\",AxisProperties=(DeadZone=0.250000,Sensitivity=1.000000,Exponent=1.000000,bInvert=False))\r\n+AxisConfig=(AxisKeyName=\"Gamepad_LeftY\",AxisProperties=(DeadZone=0.250000,Sensitivity=1.000000,Exponent=1.000000,bInvert=False))\r\n+AxisConfig=(AxisKeyName=\"Gamepad_RightX\",AxisProperties=(DeadZone=0.250000,Sensitivity=1.000000,Exponent=1.000000,bInvert=False))\r\n+AxisConfig=(AxisKeyName=\"Gamepad_RightY\",AxisProperties=(DeadZone=0.250000,Sensitivity=1.000000,Exponent=1.000000,bInvert=False))\r\n+AxisConfig=(AxisKeyName=\"MouseX\",AxisProperties=(DeadZone=0.000000,Sensitivity=0.070000,Exponent=1.000000,bInvert=False))\r\n+AxisConfig=(AxisKeyName=\"MouseY\",AxisProperties=(DeadZone=0.000000,Sensitivity=0.070000,Exponent=1.000000,bInvert=False))\r\n+AxisConfig=(AxisKeyName=\"MouseWheelAxis\",AxisProperties=(DeadZone=0.000000,Sensitivity=1.000000,Exponent=1.000000,bInvert=False))\r\n+AxisConfig=(AxisKeyName=\"Gamepad_LeftTriggerAxis\",AxisProperties=(DeadZone=0.000000,Sensitivity=1.000000,Exponent=1.000000,bInvert=False))\r\n+AxisConfig=(AxisKeyName=\"Gamepad_RightTriggerAxis\",AxisProperties=(DeadZone=0.000000,Sensitivity=1.000000,Exponent=1.000000,bInvert=False))\r\n+AxisConfig=(AxisKeyName=\"MotionController_Left_Thumbstick_X\",AxisProperties=(DeadZone=0.000000,Sensitivity=1.000000,Exponent=1.000000,bInvert=False))\r\n+AxisConfig=(AxisKeyName=\"MotionController_Left_Thumbstick_Y\",AxisProperties=(DeadZone=0.000000,Sensitivity=1.000000,Exponent=1.000000,bInvert=False))\r\n+AxisConfig=(AxisKeyName=\"MotionController_Left_TriggerAxis\",AxisProperties=(DeadZone=0.000000,Sensitivity=1.000000,Exponent=1.000000,bInvert=False))\r\n+AxisConfig=(AxisKeyName=\"MotionController_Left_Grip1Axis\",AxisProperties=(DeadZone=0.000000,Sensitivity=1.000000,Exponent=1.000000,bInvert=False))\r\n+AxisConfig=(AxisKeyName=\"MotionController_Left_Grip2Axis\",AxisProperties=(DeadZone=0.000000,Sensitivity=1.000000,Exponent=1.000000,bInvert=False))\r\n+AxisConfig=(AxisKeyName=\"MotionController_Right_Thumbstick_X\",AxisProperties=(DeadZone=0.000000,Sensitivity=1.000000,Exponent=1.000000,bInvert=False))\r\n+AxisConfig=(AxisKeyName=\"MotionController_Right_Thumbstick_Y\",AxisProperties=(DeadZone=0.000000,Sensitivity=1.000000,Exponent=1.000000,bInvert=False))\r\n+AxisConfig=(AxisKeyName=\"MotionController_Right_TriggerAxis\",AxisProperties=(DeadZone=0.000000,Sensitivity=1.000000,Exponent=1.000000,bInvert=False))\r\n+AxisConfig=(AxisKeyName=\"MotionController_Right_Grip1Axis\",AxisProperties=(DeadZone=0.000000,Sensitivity=1.000000,Exponent=1.000000,bInvert=False))\r\n+AxisConfig=(AxisKeyName=\"MotionController_Right_Grip2Axis\",AxisProperties=(DeadZone=0.000000,Sensitivity=1.000000,Exponent=1.000000,bInvert=False))\r\n+AxisConfig=(AxisKeyName=\"Gamepad_Special_Left_X\",AxisProperties=(DeadZone=0.000000,Sensitivity=1.000000,Exponent=1.000000,bInvert=False))\r\n+AxisConfig=(AxisKeyName=\"Gamepad_Special_Left_Y\",AxisProperties=(DeadZone=0.000000,Sensitivity=1.000000,Exponent=1.000000,bInvert=False))\r\n+AxisConfig=(AxisKeyName=\"MotionController_Left_Thumbstick_Z\",AxisProperties=(DeadZone=0.000000,Sensitivity=1.000000,Exponent=1.000000,bInvert=False))\r\n+AxisConfig=(AxisKeyName=\"MotionController_Right_Thumbstick_Z\",AxisProperties=(DeadZone=0.000000,Sensitivity=1.000000,Exponent=1.000000,bInvert=False))\r\n+AxisConfig=(AxisKeyName=\"OculusTouch_Left_Thumbstick\",AxisProperties=(DeadZone=0.000000,Sensitivity=1.000000,Exponent=1.000000,bInvert=False))\r\n+AxisConfig=(AxisKeyName=\"OculusTouch_Left_FaceButton1\",AxisProperties=(DeadZone=0.000000,Sensitivity=1.000000,Exponent=1.000000,bInvert=False))\r\n+AxisConfig=(AxisKeyName=\"OculusTouch_Left_Trigger\",AxisProperties=(DeadZone=0.000000,Sensitivity=1.000000,Exponent=1.000000,bInvert=False))\r\n+AxisConfig=(AxisKeyName=\"OculusTouch_Left_FaceButton2\",AxisProperties=(DeadZone=0.000000,Sensitivity=1.000000,Exponent=1.000000,bInvert=False))\r\n+AxisConfig=(AxisKeyName=\"OculusTouch_Left_IndexPointing\",AxisProperties=(DeadZone=0.000000,Sensitivity=1.000000,Exponent=1.000000,bInvert=False))\r\n+AxisConfig=(AxisKeyName=\"OculusTouch_Left_ThumbUp\",AxisProperties=(DeadZone=0.000000,Sensitivity=1.000000,Exponent=1.000000,bInvert=False))\r\n+AxisConfig=(AxisKeyName=\"OculusTouch_Right_Thumbstick\",AxisProperties=(DeadZone=0.000000,Sensitivity=1.000000,Exponent=1.000000,bInvert=False))\r\n+AxisConfig=(AxisKeyName=\"OculusTouch_Right_FaceButton1\",AxisProperties=(DeadZone=0.000000,Sensitivity=1.000000,Exponent=1.000000,bInvert=False))\r\n+AxisConfig=(AxisKeyName=\"OculusTouch_Right_Trigger\",AxisProperties=(DeadZone=0.000000,Sensitivity=1.000000,Exponent=1.000000,bInvert=False))\r\n+AxisConfig=(AxisKeyName=\"OculusTouch_Right_FaceButton2\",AxisProperties=(DeadZone=0.000000,Sensitivity=1.000000,Exponent=1.000000,bInvert=False))\r\n+AxisConfig=(AxisKeyName=\"OculusTouch_Right_IndexPointing\",AxisProperties=(DeadZone=0.000000,Sensitivity=1.000000,Exponent=1.000000,bInvert=False))\r\n+AxisConfig=(AxisKeyName=\"OculusTouch_Right_ThumbUp\",AxisProperties=(DeadZone=0.000000,Sensitivity=1.000000,Exponent=1.000000,bInvert=False))\r\n+AxisConfig=(AxisKeyName=\"OculusTouchpad_Touchpad_X\",AxisProperties=(DeadZone=0.000000,Sensitivity=1.000000,Exponent=1.000000,bInvert=False))\r\n+AxisConfig=(AxisKeyName=\"OculusTouchpad_Touchpad_Y\",AxisProperties=(DeadZone=0.000000,Sensitivity=1.000000,Exponent=1.000000,bInvert=False))\r\n+AxisConfig=(AxisKeyName=\"SteamVR_Knuckles_Left_HandGrip\",AxisProperties=(DeadZone=0.000000,Sensitivity=1.000000,Exponent=1.000000,bInvert=False))\r\n+AxisConfig=(AxisKeyName=\"SteamVR_Knuckles_Left_IndexGrip\",AxisProperties=(DeadZone=0.000000,Sensitivity=1.000000,Exponent=1.000000,bInvert=False))\r\n+AxisConfig=(AxisKeyName=\"SteamVR_Knuckles_Left_MiddleGrip\",AxisProperties=(DeadZone=0.000000,Sensitivity=1.000000,Exponent=1.000000,bInvert=False))\r\n+AxisConfig=(AxisKeyName=\"SteamVR_Knuckles_Left_RingGrip\",AxisProperties=(DeadZone=0.000000,Sensitivity=1.000000,Exponent=1.000000,bInvert=False))\r\n+AxisConfig=(AxisKeyName=\"SteamVR_Knuckles_Left_PinkyGrip\",AxisProperties=(DeadZone=0.000000,Sensitivity=1.000000,Exponent=1.000000,bInvert=False))\r\n+AxisConfig=(AxisKeyName=\"SteamVR_Knuckles_Right_HandGrip\",AxisProperties=(DeadZone=0.000000,Sensitivity=1.000000,Exponent=1.000000,bInvert=False))\r\n+AxisConfig=(AxisKeyName=\"SteamVR_Knuckles_Right_IndexGrip\",AxisProperties=(DeadZone=0.000000,Sensitivity=1.000000,Exponent=1.000000,bInvert=False))\r\n+AxisConfig=(AxisKeyName=\"SteamVR_Knuckles_Right_MiddleGrip\",AxisProperties=(DeadZone=0.000000,Sensitivity=1.000000,Exponent=1.000000,bInvert=False))\r\n+AxisConfig=(AxisKeyName=\"SteamVR_Knuckles_Right_RingGrip\",AxisProperties=(DeadZone=0.000000,Sensitivity=1.000000,Exponent=1.000000,bInvert=False))\r\n+AxisConfig=(AxisKeyName=\"SteamVR_Knuckles_Right_PinkyGrip\",AxisProperties=(DeadZone=0.000000,Sensitivity=1.000000,Exponent=1.000000,bInvert=False))\r\n+AxisConfig=(AxisKeyName=\"Daydream_Left_Trackpad_X\",AxisProperties=(DeadZone=0.000000,Sensitivity=1.000000,Exponent=1.000000,bInvert=False))\r\n+AxisConfig=(AxisKeyName=\"Daydream_Left_Trackpad_Y\",AxisProperties=(DeadZone=0.000000,Sensitivity=1.000000,Exponent=1.000000,bInvert=False))\r\n+AxisConfig=(AxisKeyName=\"Daydream_Right_Trackpad_X\",AxisProperties=(DeadZone=0.000000,Sensitivity=1.000000,Exponent=1.000000,bInvert=False))\r\n+AxisConfig=(AxisKeyName=\"Daydream_Right_Trackpad_Y\",AxisProperties=(DeadZone=0.000000,Sensitivity=1.000000,Exponent=1.000000,bInvert=False))\r\n+AxisConfig=(AxisKeyName=\"Vive_Left_Trigger_Axis\",AxisProperties=(DeadZone=0.000000,Sensitivity=1.000000,Exponent=1.000000,bInvert=False))\r\n+AxisConfig=(AxisKeyName=\"Vive_Left_Trackpad_X\",AxisProperties=(DeadZone=0.000000,Sensitivity=1.000000,Exponent=1.000000,bInvert=False))\r\n+AxisConfig=(AxisKeyName=\"Vive_Left_Trackpad_Y\",AxisProperties=(DeadZone=0.000000,Sensitivity=1.000000,Exponent=1.000000,bInvert=False))\r\n+AxisConfig=(AxisKeyName=\"Vive_Right_Trigger_Axis\",AxisProperties=(DeadZone=0.000000,Sensitivity=1.000000,Exponent=1.000000,bInvert=False))\r\n+AxisConfig=(AxisKeyName=\"Vive_Right_Trackpad_X\",AxisProperties=(DeadZone=0.000000,Sensitivity=1.000000,Exponent=1.000000,bInvert=False))\r\n+AxisConfig=(AxisKeyName=\"Vive_Right_Trackpad_Y\",AxisProperties=(DeadZone=0.000000,Sensitivity=1.000000,Exponent=1.000000,bInvert=False))\r\n+AxisConfig=(AxisKeyName=\"MixedReality_Left_Trigger_Axis\",AxisProperties=(DeadZone=0.000000,Sensitivity=1.000000,Exponent=1.000000,bInvert=False))\r\n+AxisConfig=(AxisKeyName=\"MixedReality_Left_Thumbstick_X\",AxisProperties=(DeadZone=0.000000,Sensitivity=1.000000,Exponent=1.000000,bInvert=False))\r\n+AxisConfig=(AxisKeyName=\"MixedReality_Left_Thumbstick_Y\",AxisProperties=(DeadZone=0.000000,Sensitivity=1.000000,Exponent=1.000000,bInvert=False))\r\n+AxisConfig=(AxisKeyName=\"MixedReality_Left_Trackpad_X\",AxisProperties=(DeadZone=0.000000,Sensitivity=1.000000,Exponent=1.000000,bInvert=False))\r\n+AxisConfig=(AxisKeyName=\"MixedReality_Left_Trackpad_Y\",AxisProperties=(DeadZone=0.000000,Sensitivity=1.000000,Exponent=1.000000,bInvert=False))\r\n+AxisConfig=(AxisKeyName=\"MixedReality_Right_Trigger_Axis\",AxisProperties=(DeadZone=0.000000,Sensitivity=1.000000,Exponent=1.000000,bInvert=False))\r\n+AxisConfig=(AxisKeyName=\"MixedReality_Right_Thumbstick_X\",AxisProperties=(DeadZone=0.000000,Sensitivity=1.000000,Exponent=1.000000,bInvert=False))\r\n+AxisConfig=(AxisKeyName=\"MixedReality_Right_Thumbstick_Y\",AxisProperties=(DeadZone=0.000000,Sensitivity=1.000000,Exponent=1.000000,bInvert=False))\r\n+AxisConfig=(AxisKeyName=\"MixedReality_Right_Trackpad_X\",AxisProperties=(DeadZone=0.000000,Sensitivity=1.000000,Exponent=1.000000,bInvert=False))\r\n+AxisConfig=(AxisKeyName=\"MixedReality_Right_Trackpad_Y\",AxisProperties=(DeadZone=0.000000,Sensitivity=1.000000,Exponent=1.000000,bInvert=False))\r\n+AxisConfig=(AxisKeyName=\"OculusGo_Left_Trackpad_X\",AxisProperties=(DeadZone=0.000000,Sensitivity=1.000000,Exponent=1.000000,bInvert=False))\r\n+AxisConfig=(AxisKeyName=\"OculusGo_Left_Trackpad_Y\",AxisProperties=(DeadZone=0.000000,Sensitivity=1.000000,Exponent=1.000000,bInvert=False))\r\n+AxisConfig=(AxisKeyName=\"OculusGo_Right_Trackpad_X\",AxisProperties=(DeadZone=0.000000,Sensitivity=1.000000,Exponent=1.000000,bInvert=False))\r\n+AxisConfig=(AxisKeyName=\"OculusGo_Right_Trackpad_Y\",AxisProperties=(DeadZone=0.000000,Sensitivity=1.000000,Exponent=1.000000,bInvert=False))\r\n+AxisConfig=(AxisKeyName=\"OculusTouch_Left_Grip_Axis\",AxisProperties=(DeadZone=0.000000,Sensitivity=1.000000,Exponent=1.000000,bInvert=False))\r\n+AxisConfig=(AxisKeyName=\"OculusTouch_Left_Trigger_Axis\",AxisProperties=(DeadZone=0.000000,Sensitivity=1.000000,Exponent=1.000000,bInvert=False))\r\n+AxisConfig=(AxisKeyName=\"OculusTouch_Left_Thumbstick_X\",AxisProperties=(DeadZone=0.000000,Sensitivity=1.000000,Exponent=1.000000,bInvert=False))\r\n+AxisConfig=(AxisKeyName=\"OculusTouch_Left_Thumbstick_Y\",AxisProperties=(DeadZone=0.000000,Sensitivity=1.000000,Exponent=1.000000,bInvert=False))\r\n+AxisConfig=(AxisKeyName=\"OculusTouch_Right_Grip_Axis\",AxisProperties=(DeadZone=0.000000,Sensitivity=1.000000,Exponent=1.000000,bInvert=False))\r\n+AxisConfig=(AxisKeyName=\"OculusTouch_Right_Trigger_Axis\",AxisProperties=(DeadZone=0.000000,Sensitivity=1.000000,Exponent=1.000000,bInvert=False))\r\n+AxisConfig=(AxisKeyName=\"OculusTouch_Right_Thumbstick_X\",AxisProperties=(DeadZone=0.000000,Sensitivity=1.000000,Exponent=1.000000,bInvert=False))\r\n+AxisConfig=(AxisKeyName=\"OculusTouch_Right_Thumbstick_Y\",AxisProperties=(DeadZone=0.000000,Sensitivity=1.000000,Exponent=1.000000,bInvert=False))\r\n+AxisConfig=(AxisKeyName=\"ValveIndex_Left_Grip_Axis\",AxisProperties=(DeadZone=0.000000,Sensitivity=1.000000,Exponent=1.000000,bInvert=False))\r\n+AxisConfig=(AxisKeyName=\"ValveIndex_Left_Grip_Force\",AxisProperties=(DeadZone=0.000000,Sensitivity=1.000000,Exponent=1.000000,bInvert=False))\r\n+AxisConfig=(AxisKeyName=\"ValveIndex_Left_Trigger_Axis\",AxisProperties=(DeadZone=0.000000,Sensitivity=1.000000,Exponent=1.000000,bInvert=False))\r\n+AxisConfig=(AxisKeyName=\"ValveIndex_Left_Thumbstick_X\",AxisProperties=(DeadZone=0.000000,Sensitivity=1.000000,Exponent=1.000000,bInvert=False))\r\n+AxisConfig=(AxisKeyName=\"ValveIndex_Left_Thumbstick_Y\",AxisProperties=(DeadZone=0.000000,Sensitivity=1.000000,Exponent=1.000000,bInvert=False))\r\n+AxisConfig=(AxisKeyName=\"ValveIndex_Left_Trackpad_X\",AxisProperties=(DeadZone=0.000000,Sensitivity=1.000000,Exponent=1.000000,bInvert=False))\r\n+AxisConfig=(AxisKeyName=\"ValveIndex_Left_Trackpad_Y\",AxisProperties=(DeadZone=0.000000,Sensitivity=1.000000,Exponent=1.000000,bInvert=False))\r\n+AxisConfig=(AxisKeyName=\"ValveIndex_Left_Trackpad_Force\",AxisProperties=(DeadZone=0.000000,Sensitivity=1.000000,Exponent=1.000000,bInvert=False))\r\n+AxisConfig=(AxisKeyName=\"ValveIndex_Left_Trackpad_Touch\",AxisProperties=(DeadZone=0.000000,Sensitivity=1.000000,Exponent=1.000000,bInvert=False))\r\n+AxisConfig=(AxisKeyName=\"ValveIndex_Right_Grip_Axis\",AxisProperties=(DeadZone=0.000000,Sensitivity=1.000000,Exponent=1.000000,bInvert=False))\r\n+AxisConfig=(AxisKeyName=\"ValveIndex_Right_Grip_Force\",AxisProperties=(DeadZone=0.000000,Sensitivity=1.000000,Exponent=1.000000,bInvert=False))\r\nbAltEnterTogglesFullscreen=True\r\nbF11TogglesFullscreen=True\r\nbUseMouseForTouch=False\r\nbEnableMouseSmoothing=True\r\nbEnableFOVScaling=True\r\nbCaptureMouseOnLaunch=True\r\nbAlwaysShowTouchInterface=False\r\nbShowConsoleOnFourFingerTap=True\r\nbEnableGestureRecognizer=False\r\nbUseAutocorrect=False\r\nDefaultViewportMouseCaptureMode=CapturePermanently_IncludingInitialMouseDown\r\nDefaultViewportMouseLockMode=LockOnCapture\r\nFOVScale=0.011110\r\nDoubleClickTime=0.200000\r\n+ActionMappings=(ActionName=\"Jump\",bShift=False,bCtrl=False,bAlt=False,bCmd=False,Key=SpaceBar)\r\n+ActionMappings=(ActionName=\"Jump\",bShift=False,bCtrl=False,bAlt=False,bCmd=False,Key=Gamepad_FaceButton_Bottom)\r\n+ActionMappings=(ActionName=\"Jump\",bShift=False,bCtrl=False,bAlt=False,bCmd=False,Key=Daydream_Left_Select_Click)\r\n+ActionMappings=(ActionName=\"Jump\",bShift=False,bCtrl=False,bAlt=False,bCmd=False,Key=Vive_Left_Trigger_Click)\r\n+ActionMappings=(ActionName=\"Jump\",bShift=False,bCtrl=False,bAlt=False,bCmd=False,Key=Vive_Right_Trigger_Click)\r\n+ActionMappings=(ActionName=\"Jump\",bShift=False,bCtrl=False,bAlt=False,bCmd=False,Key=MixedReality_Left_Trigger_Click)\r\n+ActionMappings=(ActionName=\"Jump\",bShift=False,bCtrl=False,bAlt=False,bCmd=False,Key=MixedReality_Right_Trigger_Click)\r\n+ActionMappings=(ActionName=\"Jump\",bShift=False,bCtrl=False,bAlt=False,bCmd=False,Key=OculusGo_Left_Trigger_Click)\r\n+ActionMappings=(ActionName=\"Jump\",bShift=False,bCtrl=False,bAlt=False,bCmd=False,Key=OculusTouch_Left_Trigger_Click)\r\n+ActionMappings=(ActionName=\"Jump\",bShift=False,bCtrl=False,bAlt=False,bCmd=False,Key=OculusTouch_Right_Trigger_Click)\r\n+ActionMappings=(ActionName=\"Jump\",bShift=False,bCtrl=False,bAlt=False,bCmd=False,Key=ValveIndex_Left_Trigger_Click)\r\n+ActionMappings=(ActionName=\"Jump\",bShift=False,bCtrl=False,bAlt=False,bCmd=False,Key=ValveIndex_Right_Trigger_Click)\r\n+ActionMappings=(ActionName=\"Jump\",bShift=False,bCtrl=False,bAlt=False,bCmd=False,Key=MagicLeap_Left_Trigger)\r\n+ActionMappings=(ActionName=\"Sprint\",bShift=False,bCtrl=False,bAlt=False,bCmd=False,Key=LeftShift)\r\n+ActionMappings=(ActionName=\"Fire\",bShift=False,bCtrl=False,bAlt=False,bCmd=False,Key=LeftMouseButton)\r\n+ActionMappings=(ActionName=\"Interact\",bShift=False,bCtrl=False,bAlt=False,bCmd=False,Key=E)\r\n+AxisMappings=(AxisName=\"MoveForward\",Scale=1.000000,Key=W)\r\n+AxisMappings=(AxisName=\"MoveForward\",Scale=-1.000000,Key=S)\r\n+AxisMappings=(AxisName=\"MoveForward\",Scale=1.000000,Key=Up)\r\n+AxisMappings=(AxisName=\"MoveForward\",Scale=-1.000000,Key=Down)\r\n+AxisMappings=(AxisName=\"MoveForward\",Scale=1.000000,Key=Gamepad_LeftY)\r\n+AxisMappings=(AxisName=\"MoveRight\",Scale=-1.000000,Key=A)\r\n+AxisMappings=(AxisName=\"MoveRight\",Scale=1.000000,Key=D)\r\n+AxisMappings=(AxisName=\"MoveRight\",Scale=1.000000,Key=Gamepad_LeftX)\r\n+AxisMappings=(AxisName=\"TurnRate\",Scale=1.000000,Key=Gamepad_RightX)\r\n+AxisMappings=(AxisName=\"TurnRate\",Scale=-1.000000,Key=Left)\r\n+AxisMappings=(AxisName=\"TurnRate\",Scale=1.000000,Key=Right)\r\n+AxisMappings=(AxisName=\"Turn\",Scale=1.000000,Key=MouseX)\r\n+AxisMappings=(AxisName=\"LookUpRate\",Scale=1.000000,Key=Gamepad_RightY)\r\n+AxisMappings=(AxisName=\"LookUp\",Scale=-1.000000,Key=MouseY)\r\n+AxisMappings=(AxisName=\"TurnRate\",Scale=-1.000000,Key=Vive_Right_Trackpad_X)\r\n+AxisMappings=(AxisName=\"MoveForward\",Scale=1.000000,Key=Daydream_Left_Trackpad_Y)\r\n+AxisMappings=(AxisName=\"MoveForward\",Scale=1.000000,Key=Vive_Left_Trackpad_Y)\r\n+AxisMappings=(AxisName=\"MoveRight\",Scale=1.000000,Key=Daydream_Left_Trackpad_X)\r\n+AxisMappings=(AxisName=\"MoveRight\",Scale=1.000000,Key=Vive_Left_Trackpad_X)\r\n+AxisMappings=(AxisName=\"MoveRight\",Scale=1.000000,Key=MixedReality_Left_Thumbstick_X)\r\n+AxisMappings=(AxisName=\"MoveRight\",Scale=1.000000,Key=OculusGo_Left_Trackpad_X)\r\n+AxisMappings=(AxisName=\"MoveForward\",Scale=1.000000,Key=MixedReality_Left_Thumbstick_Y)\r\n+AxisMappings=(AxisName=\"MoveForward\",Scale=1.000000,Key=OculusGo_Left_Trackpad_Y)\r\n+AxisMappings=(AxisName=\"TurnRate\",Scale=-1.000000,Key=MixedReality_Right_Thumbstick_X)\r\n+AxisMappings=(AxisName=\"TurnRate\",Scale=-1.000000,Key=OculusTouch_Right_Thumbstick_X)\r\n+AxisMappings=(AxisName=\"TurnRate\",Scale=-1.000000,Key=ValveIndex_Right_Thumbstick_X)\r\n+AxisMappings=(AxisName=\"MoveForward\",Scale=1.000000,Key=OculusTouch_Left_Thumbstick_Y)\r\n+AxisMappings=(AxisName=\"MoveForward\",Scale=1.000000,Key=ValveIndex_Left_Thumbstick_Y)\r\n+AxisMappings=(AxisName=\"MoveForward\",Scale=1.000000,Key=MagicLeap_Left_Trackpad_Y)\r\n+AxisMappings=(AxisName=\"MoveRight\",Scale=1.000000,Key=OculusTouch_Left_Thumbstick_X)\r\n+AxisMappings=(AxisName=\"MoveRight\",Scale=1.000000,Key=ValveIndex_Left_Thumbstick_X)\r\n+AxisMappings=(AxisName=\"MoveRight\",Scale=1.000000,Key=MagicLeap_Left_Trackpad_X)\r\nDefaultTouchInterface=/Engine/MobileResources/HUD/DefaultVirtualJoysticks.DefaultVirtualJoysticks\r\n-ConsoleKeys=Tilde\r\n+ConsoleKeys=Tilde\r\n\r\n
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/Config/DefaultInput.ini b/Config/DefaultInput.ini
+--- a/Config/DefaultInput.ini	(revision 3a2fcb36881e944c2ec8482a0f7101ee72eef389)
++++ b/Config/DefaultInput.ini	(date 1614994839337)
+@@ -132,7 +132,7 @@
+ +ActionMappings=(ActionName="Jump",bShift=False,bCtrl=False,bAlt=False,bCmd=False,Key=MagicLeap_Left_Trigger)
+ +ActionMappings=(ActionName="Sprint",bShift=False,bCtrl=False,bAlt=False,bCmd=False,Key=LeftShift)
+ +ActionMappings=(ActionName="Fire",bShift=False,bCtrl=False,bAlt=False,bCmd=False,Key=LeftMouseButton)
+-+ActionMappings=(ActionName="Interact",bShift=False,bCtrl=False,bAlt=False,bCmd=False,Key=E)
+++ActionMappings=(ActionName="Interact",bShift=False,bCtrl=False,bAlt=False,bCmd=False,Key=F)
+ +AxisMappings=(AxisName="MoveForward",Scale=1.000000,Key=W)
+ +AxisMappings=(AxisName="MoveForward",Scale=-1.000000,Key=S)
+ +AxisMappings=(AxisName="MoveForward",Scale=1.000000,Key=Up)
+Index: Source/CodenameNull/Interactable_Ladder.h
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/Source/CodenameNull/Interactable_Ladder.h b/Source/CodenameNull/Interactable_Ladder.h
+new file mode 100644
+--- /dev/null	(date 1614459681584)
++++ b/Source/CodenameNull/Interactable_Ladder.h	(date 1614459681584)
+@@ -0,0 +1,21 @@
++// Fill out your copyright notice in the Description page of Project Settings.
++
++#pragma once
++
++#include "CoreMinimal.h"
++#include "Master_Interactable.h"
++#include "Interactable_Ladder.generated.h"
++
++/**
++ * 
++ */
++UCLASS()
++class CODENAMENULL_API AInteractable_Ladder : public AMaster_Interactable
++{
++	GENERATED_BODY()
++
++	public:
++	virtual void Interact() override;
++
++	AInteractable_Ladder();
++};
+Index: Source/CodenameNull/Interactable_light.cpp
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.BaseRevisionTextPatchEP
+<+>// Fill out your copyright notice in the Description page of Project Settings.\r\n\r\n#include \"Interactable_light.h\"\r\n\r\n\r\nAInteractable_light::AInteractable_light()\r\n{\r\n\tState = true;\r\n\tIntensity = 100000.0f;\r\n\tLight = CreateDefaultSubobject<USpotLightComponent>(TEXT(\"Light\"));\r\n\tLight->SetupAttachment(GetRootComponent());\r\n\tLight->SetIntensity(Intensity);\r\n}\r\n\r\nvoid AInteractable_light::Interact()\r\n{\r\n\tif(State)\r\n\t{\r\n\t\tLight->SetIntensity(0);\r\n\t}\r\n\telse\r\n\t{\r\n\t\tLight->SetIntensity(Intensity);\r\n\t}\r\n\tState = !State;\r\n}\r\n\r\n\r\n
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/Source/CodenameNull/Interactable_light.cpp b/Source/CodenameNull/Interactable_light.cpp
+--- a/Source/CodenameNull/Interactable_light.cpp	(revision 3a2fcb36881e944c2ec8482a0f7101ee72eef389)
++++ b/Source/CodenameNull/Interactable_light.cpp	(date 1614507069489)
+@@ -2,7 +2,7 @@
+ 
+ #include "Interactable_light.h"
+ 
+-
++//Defines the Uspotlight object
+ AInteractable_light::AInteractable_light()
+ {
+ 	State = true;
+@@ -12,6 +12,7 @@
+ 	Light->SetIntensity(Intensity);
+ }
+ 
++//interaction implementation
+ void AInteractable_light::Interact()
+ {
+ 	if(State)
+@@ -23,6 +24,8 @@
+ 		Light->SetIntensity(Intensity);
+ 	}
+ 	State = !State;
++	UE_LOG(LogClass, Log, TEXT("This a testing statement. %s"), State ? TEXT("True") : TEXT("False") );
++	
+ }
+ 
+ 

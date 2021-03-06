@@ -1,0 +1,14 @@
+﻿<changelist name="unnamed" date="1614998314797" recycled="false">
+  <option name="PATH" value="$PROJECT_DIR$/.idea/.idea.CodenameNull/.idea/shelf/unnamed/shelved.patch" />
+  <option name="DESCRIPTION" value="" />
+  <binary>
+    <option name="BEFORE_PATH" value="Content/Maps/InteractiveTestArea.umap" />
+    <option name="AFTER_PATH" value="Content/Maps/InteractiveTestArea.umap" />
+    <option name="SHELVED_PATH" value="$PROJECT_DIR$/.idea/.idea.CodenameNull/.idea/shelf/unnamed/InteractiveTestArea.umap" />
+  </binary>
+  <binary>
+    <option name="BEFORE_PATH" value="Content/Maps/InteractiveTestArea_BuiltData.uasset" />
+    <option name="AFTER_PATH" value="Content/Maps/InteractiveTestArea_BuiltData.uasset" />
+    <option name="SHELVED_PATH" value="$PROJECT_DIR$/.idea/.idea.CodenameNull/.idea/shelf/unnamed/InteractiveTestArea_BuiltData.uasset" />
+  </binary>
+</changelist>
