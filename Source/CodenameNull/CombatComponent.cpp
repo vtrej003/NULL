@@ -8,8 +8,8 @@ UCombatComponent::UCombatComponent()
 {
 	// Set this component to be initialized when the game starts, and to be ticked every frame.  You can turn these features
 	// off to improve performance if you don't need them.
-	PrimaryComponentTick.bCanEverTick = true;
-	IsDead = true;
+	PrimaryComponentTick.bCanEverTick = false;
+	IsDead = false;
 	CurrentHealth = MaxHealth;
 	// ...
 }
@@ -33,8 +33,7 @@ void UCombatComponent::BeginPlay()
 
 void UCombatComponent::HandleTakeDamage(AActor* DamagedActor, float Damage, const class UDamageType* DamageType, class AController* InstigatedBy, AActor* DamageCauser)
 {
-	if (IsDead)
-		return;
+	
 	GEngine->AddOnScreenDebugMessage(-1, 1.5, FColor::White, "took damage " +  FString::SanitizeFloat(Damage));
 	CurrentHealth = FMath::Clamp(CurrentHealth - Damage, 0.0f, MaxHealth);
 	OnHealthChanged.Broadcast(CurrentHealth);
