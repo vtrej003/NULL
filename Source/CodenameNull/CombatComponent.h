@@ -22,12 +22,12 @@ public:
 
 private:
 	UPROPERTY()
-	ACharacter* Owner;
+	AActor* Owner;
 
 	UPROPERTY(EditAnywhere, Category = "Health", meta = (ClampMin = 0.0f))
 	float CurrentHealth;
 
-	UPROPERTY(EditDefaultsOnly, Category = "Health", meta = (ClampMin = 0.0f))
+	UPROPERTY(EditAnywhere, Category = "Health", meta = (ClampMin = 0.0f))
 	float MaxHealth;
 
 	UPROPERTY()
@@ -36,9 +36,6 @@ private:
 protected:
 	// Called when the game starts
 	virtual void BeginPlay() override;
-
-	UFUNCTION()
-	void HandleTakeDamage(AActor* DamagedActor, float Damage, class AController* InstigatedBy, FVector HitLocation, class UPrimitiveComponent* FHitComponent, FName BoneName, FVector ShotFromDirection, const class UDamageType* DamageType, AActor* DamageCauser);
 
 public:	
 	UPROPERTY(BlueprintAssignable)
@@ -49,4 +46,13 @@ public:
 
 	// Called every frame
 	virtual void TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction) override;
+
+	UFUNCTION(BlueprintCallable)
+	float GetCurrentHealth();
+
+	UFUNCTION(BlueprintCallable)
+	float GetMaxHealth();
+
+	UFUNCTION(BlueprintCallable)
+	void HandleTakeDamage(AActor* DamagedActor, float Damage, const class UDamageType* DamageType, class AController* InstigatedBy, AActor* DamageCauser);
 };

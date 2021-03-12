@@ -10,6 +10,7 @@ UCombatComponent::UCombatComponent()
 	// off to improve performance if you don't need them.
 	PrimaryComponentTick.bCanEverTick = true;
 	IsDead = true;
+	CurrentHealth = MaxHealth;
 	// ...
 }
 
@@ -19,19 +20,22 @@ void UCombatComponent::BeginPlay()
 {
 	Super::BeginPlay();
 
-	Owner = (ACharacter*)GetOwner();
+	Owner = GetOwner();
 	if (!Owner) {
 		return;
 	}
-
-	Owner->OnTakePointDamage.AddDynamic(this, &UCombatComponent::HandleTakeDamage);
+	Owner->OnTakeAnyDamage.AddDynamic(this, &UCombatComponent::HandleTakeDamage);
+	if (Owner->OnTakeAnyDamage.IsBound()) {
+		FString debug = "Combat component initialized on " + Owner->GetName();
+		GEngine->AddOnScreenDebugMessage(-1, 1.5, FColor::White, debug);
+	}
 }
 
-void UCombatComponent::HandleTakeDamage(AActor* DamagedActor, float Damage, AController* InstigatedBy, FVector HitLocation, UPrimitiveComponent* FHitComponent, FName BoneName, FVector ShotFromDirection, const UDamageType* DamageType, AActor* DamageCauser)
+void UCombatComponent::HandleTakeDamage(AActor* DamagedActor, float Damage, const class UDamageType* DamageType, class AController* InstigatedBy, AActor* DamageCauser)
 {
 	if (IsDead)
 		return;
-
+	GEngine->AddOnScreenDebugMessage(-1, 1.5, FColor::White, "took damage " +  FString::SanitizeFloat(Damage));
 	CurrentHealth = FMath::Clamp(CurrentHealth - Damage, 0.0f, MaxHealth);
 	OnHealthChanged.Broadcast(CurrentHealth);
 	if (CurrentHealth == 0.0f) {
@@ -47,5 +51,15 @@ void UCombatComponent::TickComponent(float DeltaTime, ELevelTick TickType, FActo
 	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
 
 	// ...
+}
+
+float UCombatComponent::GetCurrentHealth()
+{
+	return CurrentHealth;
+}
+
+float UCombatComponent::GetMaxHealth()
+{
+	return MaxHealth;
 }
 

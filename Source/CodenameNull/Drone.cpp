@@ -11,6 +11,7 @@ ADrone::ADrone()
 
 	// Create a Combat Component
 	CombatComponent = CreateDefaultSubobject<UCombatComponent>(TEXT("CombatComponent"));
+	CombatComponent->RegisterComponent();
 }
 
 // Called when the game starts or when spawned
