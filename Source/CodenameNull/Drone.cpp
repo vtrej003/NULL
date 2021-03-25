@@ -9,6 +9,9 @@ ADrone::ADrone()
  	// Set this pawn to call Tick() every frame.  You can turn this off to improve performance if you don't need it.
 	PrimaryActorTick.bCanEverTick = true;
 
+	// Create a Combat Component
+	CombatComponent = CreateDefaultSubobject<UCombatComponent>(TEXT("CombatComponent"));
+	CombatComponent->RegisterComponent();
 }
 
 // Called when the game starts or when spawned
