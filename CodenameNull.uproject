@@ -19,7 +19,11 @@
 			"Enabled": true
 		},
 		{
+<<<<<<< HEAD
 			"Name": "FMODStudio",
+=======
+			"Name": "EditorScriptingUtilities",
+>>>>>>> main
 			"Enabled": true
 		}
 	]

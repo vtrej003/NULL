@@ -3,6 +3,7 @@
 
 #include "GunProjectile.h"
 #include <Runtime\Engine\Classes\Kismet\GameplayStatics.h>
+#include "CombatComponent.h"
 #include "DrawDebugHelpers.h"
 
 //AGunProjectile::AGunProjectile(float initialSpeed, float maxSpeed, bool bRotationFollowsVelocity, bool bShouldBounce, float bounciness, float projectileGravityScale)
@@ -85,13 +86,15 @@ void AGunProjectile::FireInDirection(const FVector& ShootDirection)
 // Function that is called when the projectile hits something.
 void AGunProjectile::OnHit(UPrimitiveComponent* HitComponent, AActor* OtherActor, UPrimitiveComponent* OtherComponent, FVector NormalImpulse, const FHitResult& Hit)
 {
-	GEngine->AddOnScreenDebugMessage(-1, 1.5, FColor::White, "hit something");
 	if (OtherActor != this)
 	{
 		if (OtherComponent->IsSimulatingPhysics())
 			OtherComponent->AddImpulseAtLocation(ProjectileMovementComponent->Velocity * 100.0f, Hit.ImpactPoint);
-		else 
-			UGameplayStatics::ApplyPointDamage(OtherActor, Damage, GetVelocity().GetSafeNormal(), Hit, GetInstigatorController(), this, UDamageType::StaticClass());
+		else if (OtherActor->GetComponentByClass(UCombatComponent::StaticClass())) {
+			FString debug = "hit combat component on " + OtherActor->GetName();
+			UGameplayStatics::ApplyDamage(OtherActor, Damage, nullptr, this, nullptr);
+			GEngine->AddOnScreenDebugMessage(-1, 1.5, FColor::White, debug);
+		}
 	}
 
 	Destroy();
