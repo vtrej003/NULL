@@ -1,4 +1,4 @@
-// Copyright (c), Firelight Technologies Pty, Ltd. 2012-2020.
+// Copyright (c), Firelight Technologies Pty, Ltd. 2012-2021.
 
 #pragma once
 
@@ -139,9 +139,6 @@ public:
 	 */
     virtual const FFMODListener &GetNearestListener(const FVector &Location) = 0;
 
-    /** This event is fired after all banks were reloaded */
-    virtual FSimpleMulticastDelegate &BanksReloadedEvent() = 0;
-
     /** Return a list of banks that failed to load due to an error */
     virtual TArray<FString> GetFailedBankLoads(EFMODSystemContext::Type Context) = 0;
 
@@ -165,4 +162,9 @@ public:
 
     /** Set active locale. Locale must be the locale name of one of the configured project locales */
     virtual bool SetLocale(const FString& Locale) = 0;
+
+#if WITH_EDITOR
+    /** Called by the editor module when banks have been modified on disk */
+    virtual void ReloadBanks() = 0;
+#endif
 };

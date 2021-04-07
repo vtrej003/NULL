@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<objects serializationModel="Studio.02.01.00">
+	<object class="ParameterPreset" id="{1d41694d-27e5-43f4-ae1e-af108b65ac36}">
+		<property name="name">
+			<value>Cut</value>
+		</property>
+		<relationship name="folder">
+			<destination>{3e8f00b6-8bd3-4864-8450-30ed94e5babb}</destination>
+		</relationship>
+		<relationship name="parameter">
+			<destination>{ecc85a1a-4554-424a-adb4-f7d8c5aa5b3e}</destination>
+		</relationship>
+	</object>
+	<object class="GameParameter" id="{ecc85a1a-4554-424a-adb4-f7d8c5aa5b3e}">
+		<property name="initialValue">
+			<value>0</value>
+		</property>
+		<property name="seekSpeed">
+			<value>25</value>
+		</property>
+	</object>
+</objects>

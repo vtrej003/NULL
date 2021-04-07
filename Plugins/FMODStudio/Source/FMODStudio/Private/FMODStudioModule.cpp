@@ -1,4 +1,4 @@
-// Copyright (c), Firelight Technologies Pty, Ltd. 2012-2020.
+// Copyright (c), Firelight Technologies Pty, Ltd. 2012-2021.
 
 #include "FMODStudioModule.h"
 #include "FMODSettings.h"
@@ -6,7 +6,6 @@
 #include "FMODBlueprintStatics.h"
 #include "FMODAssetTable.h"
 #include "FMODFileCallbacks.h"
-#include "FMODBankUpdateNotifier.h"
 #include "FMODUtils.h"
 #include "FMODEvent.h"
 #include "FMODListener.h"
@@ -34,14 +33,6 @@
 
 #ifdef FMOD_PLATFORM_HEADER
 #include "FMODPlatform.h"
-#elif PLATFORM_PS4
-#include "FMODPlatformLoadDll_PS4.h"
-#elif PLATFORM_XBOXONE
-#include "FMODPlatformLoadDll_XBoxOne.h"
-#elif PLATFORM_SWITCH
-#include "FMODPlatformLoadDll_Switch.h"
-#else
-#include "FMODPlatformLoadDll_Generic.h"
 #endif
 
 #define LOCTEXT_NAMESPACE "FMODStudio"
@@ -184,7 +175,6 @@ public:
     }
 
     virtual void StartupModule() override;
-    virtual void PostLoadCallback() override;
     virtual void ShutdownModule() override;
 
     FString GetDllPath(const TCHAR *ShortName, bool bExplicitPath, bool bUseLibPrefix);
@@ -194,8 +184,9 @@ public:
 
     void LoadBanks(EFMODSystemContext::Type Type);
 
-    /** Called when a newer version of the bank files was detected */
-    void HandleBanksUpdated();
+#if WITH_EDITOR
+    void ReloadBanks();
+#endif
 
     void CreateStudioSystem(EFMODSystemContext::Type Type);
     void DestroyStudioSystem(EFMODSystemContext::Type Type);
@@ -227,9 +218,6 @@ public:
     virtual UFMODEvent *FindEventByName(const FString &Name) override;
     virtual FString GetBankPath(const UFMODBank &Bank) override;
     virtual void GetAllBankPaths(TArray<FString> &Paths, bool IncludeMasterBank) const override;
-
-    FSimpleMulticastDelegate BanksReloadedDelegate;
-    virtual FSimpleMulticastDelegate &BanksReloadedEvent() override { return BanksReloadedDelegate; }
 
     virtual TArray<FString> GetFailedBankLoads(EFMODSystemContext::Type Context) override { return FailedBankLoads[Context]; }
 
@@ -270,9 +258,6 @@ public:
 
     /** Table of assets with name and guid */
     FFMODAssetTable AssetTable;
-
-    /** Periodically checks for updates of the strings.bank file */
-    FFMODBankUpdateNotifier BankUpdateNotifier;
 
     /** List of failed bank files */
     TArray<FString> FailedBankLoads[EFMODSystemContext::Max];
@@ -385,7 +370,12 @@ void *FFMODStudioModule::LoadDll(const TCHAR *ShortName)
     void *Handle = nullptr;
     UE_LOG(LogFMOD, Log, TEXT("FFMODStudioModule::LoadDll: Loading %s"), *LibPath);
     // Unfortunately Unreal's platform loading code hasn't been implemented on all platforms so we wrap it
+#ifdef FMOD_PLATFORM_HEADER
     Handle = FMODPlatformLoadDll(*LibPath);
+#else
+    Handle = FPlatformProcess::GetDllHandle(*LibPath);
+#endif
+
 #if WITH_EDITOR
     if (!Handle && !FApp::IsUnattended())
     {
@@ -407,11 +397,6 @@ FString FFMODStudioModule::GetDllPath(const TCHAR *ShortName, bool bExplicitPath
     return FMODPlatform_GetDllPath(ShortName, bExplicitPath, bUseLibPrefix);
 #elif PLATFORM_MAC
     return FString::Printf(TEXT("%s/Mac/%s%s.dylib"), *BaseLibPath, LibPrefixName, ShortName);
-#elif PLATFORM_PS4
-    const TCHAR *DirPrefix = (bExplicitPath ? TEXT("/app0/prx/") : TEXT(""));
-    return FString::Printf(TEXT("%s%s%s.prx"), DirPrefix, LibPrefixName, ShortName);
-#elif PLATFORM_XBOXONE
-    return FString::Printf(TEXT("%s.dll"), ShortName);
 #elif PLATFORM_ANDROID
     return FString::Printf(TEXT("%s%s.so"), LibPrefixName, ShortName);
 #elif PLATFORM_LINUX
@@ -432,7 +417,7 @@ FString FFMODStudioModule::GetDllPath(const TCHAR *ShortName, bool bExplicitPath
 
 bool FFMODStudioModule::LoadLibraries()
 {
-#if PLATFORM_IOS || PLATFORM_TVOS || PLATFORM_ANDROID || PLATFORM_LINUX || PLATFORM_MAC || PLATFORM_SWITCH || defined(FMOD_DONT_LOAD_LIBRARIES)
+#if PLATFORM_IOS || PLATFORM_TVOS || PLATFORM_ANDROID || PLATFORM_LINUX || PLATFORM_MAC || defined(FMOD_DONT_LOAD_LIBRARIES)
     return true; // Nothing to do on those platforms
 #else
     UE_LOG(LogFMOD, Verbose, TEXT("FFMODStudioModule::LoadLibraries"));
@@ -459,7 +444,7 @@ void FFMODStudioModule::StartupModule()
 {
     UE_LOG(LogFMOD, Log, TEXT("FFMODStudioModule startup"));
     BaseLibPath = IPluginManager::Get().FindPlugin(TEXT("FMODStudio"))->GetBaseDir() + TEXT("/Binaries");
-    UE_LOG(LogFMOD, Log, TEXT(" Lib path = '%s'"), *BaseLibPath);
+    UE_LOG(LogFMOD, Log, TEXT("Lib path = '%s'"), *BaseLibPath);
 
     if (FParse::Param(FCommandLine::Get(), TEXT("nosound")) || FApp::IsBenchmarking() || IsRunningDedicatedServer() || IsRunningCommandlet())
     {
@@ -477,19 +462,14 @@ void FFMODStudioModule::StartupModule()
 
         const UFMODSettings &Settings = *GetDefault<UFMODSettings>();
 
-//#ifdef FMOD_PLATFORM_HEADER
-//        int size = FMODPlatform_MemoryPoolSize();
-#if PLATFORM_IOS || PLATFORM_TVOS || PLATFORM_ANDROID
+#if defined(FMOD_PLATFORM_HEADER)
+        int size = FMODPlatform_MemoryPoolSize();
+#elif PLATFORM_IOS || PLATFORM_TVOS || PLATFORM_ANDROID
         int size = Settings.MemoryPoolSizes.Mobile;
-#elif PLATFORM_PS4
-        int size = Settings.MemoryPoolSizes.PS4;
-#elif PLATFORM_XBOXONE
-        int size = Settings.MemoryPoolSizes.XboxOne;
-#elif PLATFORM_SWITCH
-        int size = Settings.MemoryPoolSizes.Switch;
 #else
         int size = Settings.MemoryPoolSizes.Desktop;
 #endif
+
         if (!GIsEditor && size > 0)
         {
             MemPool = FMemory::Malloc(size);
@@ -500,12 +480,12 @@ void FFMODStudioModule::StartupModule()
             verifyfmod(FMOD::Memory_Initialize(0, 0, FMODMemoryAlloc, FMODMemoryRealloc, FMODMemoryFree));
         }
 
+#if defined(FMOD_PLATFORM_HEADER)
         verifyfmod(FMODPlatformSystemSetup());
+#endif
 
         AcquireFMODFileSystem();
 
-        // Create sandbox system just for asset loading
-        AssetTable.Create();
         RefreshSettings();
 
         if (GIsEditor)
@@ -515,19 +495,12 @@ void FFMODStudioModule::StartupModule()
         }
         else
         {
-            AssetTable.Destroy(); // Don't need this copy around since we don't hot reload
-
             SetInPIE(true, false);
         }
     }
 
     OnTick = FTickerDelegate::CreateRaw(this, &FFMODStudioModule::Tick);
     TickDelegateHandle = FTicker::GetCoreTicker().AddTicker(OnTick);
-
-    if (GIsEditor)
-    {
-        BankUpdateNotifier.BanksUpdatedEvent.AddRaw(this, &FFMODStudioModule::HandleBanksUpdated);
-    }
 }
 
 inline FMOD_SPEAKERMODE ConvertSpeakerMode(EFMODSpeakerMode::Type Mode)
@@ -642,14 +615,10 @@ void FFMODStudioModule::CreateStudioSystem(EFMODSystemContext::Type Type)
         advSettings.vol0virtualvol = Settings.Vol0VirtualLevel;
         InitFlags |= FMOD_INIT_VOL0_BECOMES_VIRTUAL;
     }
-#ifdef FMOD_PLATFORM_HEADER
+#if defined(FMOD_PLATFORM_HEADER)
     FMODPlatform_SetRealChannelCount(&advSettings);
-#elif PLATFORM_IOS || PLATFORM_TVOS || PLATFORM_ANDROID || PLATFORM_SWITCH
+#elif PLATFORM_IOS || PLATFORM_TVOS || PLATFORM_ANDROID
     advSettings.maxFADPCMCodecs = Settings.RealChannelCount;
-#elif PLATFORM_PS4
-    advSettings.maxAT9Codecs = Settings.RealChannelCount;
-#elif PLATFORM_XBOXONE
-    advSettings.maxXMACodecs = Settings.RealChannelCount;
 #else
     advSettings.maxVorbisCodecs = Settings.RealChannelCount;
 #endif
@@ -784,11 +753,6 @@ void FFMODStudioModule::DestroyStudioSystem(EFMODSystemContext::Type Type)
 
 bool FFMODStudioModule::Tick(float DeltaTime)
 {
-    if (GIsEditor)
-    {
-        BankUpdateNotifier.Update();
-    }
-
     if (ClockSinks[EFMODSystemContext::Auditioning].IsValid())
     {
         verifyfmod(ClockSinks[EFMODSystemContext::Auditioning]->LastResult);
@@ -834,6 +798,7 @@ void FFMODStudioModule::UpdateListeners()
 
     if (GEngine)
     {
+        // Every PIE session has its own world and local player controller(s), iterate all of them
         for (auto ContextIt = GEngine->GetWorldContexts().CreateConstIterator(); ContextIt; ++ContextIt)
         {
             const FWorldContext &PieContext = *ContextIt;
@@ -1078,13 +1043,12 @@ void FFMODStudioModule::FinishSetListenerPosition(int NumListeners)
 
 void FFMODStudioModule::RefreshSettings()
 {
-    AssetTable.Refresh();
+    AssetTable.Load();
+
     if (GIsEditor)
     {
-        const UFMODSettings &Settings = *GetDefault<UFMODSettings>();
-        BankUpdateNotifier.SetFilePath(Settings.GetFullBankPath() / AssetTable.GetMasterStringsBankPath());
-
         // Initialize ActiveLocale based on settings
+        const UFMODSettings &Settings = *GetDefault<UFMODSettings>();
         FString LocaleCode = "";
 
         if (Settings.Locales.Num() > 0)
@@ -1111,11 +1075,6 @@ void FFMODStudioModule::SetInPIE(bool bInPIE, bool simulating)
     bSimulating = simulating;
     bListenerMoved = true;
     ResetInterpolation();
-
-    if (GIsEditor)
-    {
-        BankUpdateNotifier.EnableUpdate(!bInPIE);
-    }
 
     FMOD_DEBUG_FLAGS flags;
 
@@ -1159,12 +1118,12 @@ void FFMODStudioModule::SetInPIE(bool bInPIE, bool simulating)
 
 UFMODAsset *FFMODStudioModule::FindAssetByName(const FString &Name)
 {
-    return AssetTable.FindByName(Name);
+    return AssetTable.GetAssetByStudioPath(Name);
 }
 
 UFMODEvent *FFMODStudioModule::FindEventByName(const FString &Name)
 {
-    UFMODAsset *Asset = AssetTable.FindByName(Name);
+    UFMODAsset *Asset = FindAssetByName(Name);
     return Cast<UFMODEvent>(Asset);
 }
 
@@ -1215,10 +1174,6 @@ void FFMODStudioModule::SetSystemPaused(bool paused)
     }
 }
 
-void FFMODStudioModule::PostLoadCallback()
-{
-}
-
 void FFMODStudioModule::ShutdownModule()
 {
     UE_LOG(LogFMOD, Verbose, TEXT("FFMODStudioModule shutdown"));
@@ -1234,11 +1189,6 @@ void FFMODStudioModule::ShutdownModule()
 
     if (MemPool)
         FMemory::Free(MemPool);
-
-    if (GIsEditor)
-    {
-        BankUpdateNotifier.BanksUpdatedEvent.RemoveAll(this);
-    }
 
     if (UObjectInitialized())
     {
@@ -1445,13 +1395,14 @@ void FFMODStudioModule::LoadBanks(EFMODSystemContext::Type Type)
     bBanksLoaded = true;
 }
 
-void FFMODStudioModule::HandleBanksUpdated()
+#if WITH_EDITOR
+void FFMODStudioModule::ReloadBanks()
 {
     UE_LOG(LogFMOD, Verbose, TEXT("Refreshing auditioning system"));
 
     DestroyStudioSystem(EFMODSystemContext::Auditioning);
 
-    AssetTable.Refresh();
+    AssetTable.Load();
 
     CreateStudioSystem(EFMODSystemContext::Auditioning);
     LoadBanks(EFMODSystemContext::Auditioning);
@@ -1459,9 +1410,8 @@ void FFMODStudioModule::HandleBanksUpdated()
     DestroyStudioSystem(EFMODSystemContext::Editor);
     CreateStudioSystem(EFMODSystemContext::Editor);
     LoadBanks(EFMODSystemContext::Editor);
-
-    BanksReloadedDelegate.Broadcast();
 }
+#endif
 
 FMOD::Studio::System *FFMODStudioModule::GetStudioSystem(EFMODSystemContext::Type Context)
 {

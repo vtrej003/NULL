@@ -1,10 +1,13 @@
-// Copyright (c), Firelight Technologies Pty, Ltd. 2012-2020.
+// Copyright (c), Firelight Technologies Pty, Ltd. 2012-2021.
 
 #include "FMODAssetTable.h"
+
+#include "FMODAssetLookup.h"
 #include "FMODEvent.h"
 #include "FMODSnapshot.h"
 #include "FMODSnapshotReverb.h"
 #include "FMODBank.h"
+#include "FMODBankLookup.h"
 #include "FMODBus.h"
 #include "FMODVCA.h"
 #include "FMODUtils.h"
@@ -15,429 +18,94 @@
 #include "HAL/FileManager.h"
 #include "Misc/Paths.h"
 #include "UObject/Package.h"
-#include "AssetRegistryModule.h"
 
-#if WITH_EDITOR
-#include "ObjectTools.h"
-#endif
-
-FFMODAssetTable::FFMODAssetTable()
-    : StudioSystem(nullptr)
+void FFMODAssetTable::AddReferencedObjects(FReferenceCollector& Collector)
 {
-}
-
-FFMODAssetTable::~FFMODAssetTable()
-{
-    Destroy();
-}
-
-void FFMODAssetTable::Create()
-{
-    Destroy();
-
-    // Create a sandbox system purely for loading and considering banks
-    verifyfmod(FMOD::Studio::System::create(&StudioSystem));
-    FMOD::System *lowLevelSystem = nullptr;
-    verifyfmod(StudioSystem->getCoreSystem(&lowLevelSystem));
-    verifyfmod(lowLevelSystem->setOutput(FMOD_OUTPUTTYPE_NOSOUND));
-    AttachFMODFileSystem(lowLevelSystem, 2048);
-    verifyfmod(
-        StudioSystem->initialize(1, FMOD_STUDIO_INIT_ALLOW_MISSING_PLUGINS | FMOD_STUDIO_INIT_SYNCHRONOUS_UPDATE, FMOD_INIT_MIX_FROM_UPDATE, 0));
-}
-
-void FFMODAssetTable::Destroy()
-{
-    if (StudioSystem != nullptr)
+    // The garbage collector will clean up any objects which aren't referenced, doing this tells the garbage collector our lookups are referenced
+    // (the GC knows not to remove objects referenced by a UPROPERTY, doing this manually is required because our members aren't UPROPERTYs)
+    if (BankLookup)
     {
-        verifyfmod(StudioSystem->release());
-    }
-    StudioSystem = nullptr;
-}
-
-UFMODAsset *FFMODAssetTable::FindByName(const FString &Name) const
-{
-    const TWeakObjectPtr<UFMODAsset> *FoundAsset = NameLookup.Find(Name);
-    if (FoundAsset)
-    {
-        return FoundAsset->Get();
-    }
-    return nullptr;
-}
-
-void FFMODAssetTable::Refresh()
-{
-    if (StudioSystem == nullptr)
-    {
-        return;
+        Collector.AddReferencedObject(BankLookup);
     }
 
-    BuildBankPathLookup();
-
-    if (!MasterStringsBankPath.IsEmpty())
+    if (AssetLookup)
     {
-        const UFMODSettings &Settings = *GetDefault<UFMODSettings>();
-        FString StringPath = Settings.GetFullBankPath() / MasterStringsBankPath;
-
-        UE_LOG(LogFMOD, Log, TEXT("Loading strings bank: %s"), *StringPath);
-
-        FMOD::Studio::Bank *StudioStringBank;
-        FMOD_RESULT StringResult = StudioSystem->loadBankFile(TCHAR_TO_UTF8(*StringPath), FMOD_STUDIO_LOAD_BANK_NORMAL, &StudioStringBank);
-
-        if (StringResult == FMOD_OK)
-        {
-            TArray<char> RawBuffer;
-            RawBuffer.SetNum(256); // Initial capacity
-
-            int Count = 0;
-            verifyfmod(StudioStringBank->getStringCount(&Count));
-
-            // Enumerate all of the names in the strings bank and gather the information required to create the UE4 assets for each object
-            TArray<AssetCreateInfo> AssetCreateInfos;
-            AssetCreateInfos.Reserve(Count);
-
-            for (int StringIdx = 0; StringIdx < Count; ++StringIdx)
-            {
-                FMOD::Studio::ID Guid = { 0 };
-
-                while (true)
-                {
-                    int ActualSize = 0;
-                    FMOD_RESULT Result = StudioStringBank->getStringInfo(StringIdx, &Guid, RawBuffer.GetData(), RawBuffer.Num(), &ActualSize);
-
-                    if (Result == FMOD_ERR_TRUNCATED)
-                    {
-                        RawBuffer.SetNum(ActualSize);
-                    }
-                    else
-                    {
-                        verifyfmod(Result);
-                        break;
-                    }
-                }
-
-                FString AssetName(UTF8_TO_TCHAR(RawBuffer.GetData()));
-                FGuid AssetGuid = FMODUtils::ConvertGuid(Guid);
-
-                if (!AssetName.IsEmpty())
-                {
-                    AssetCreateInfo CreateInfo = {};
-
-                    if (MakeAssetCreateInfo(AssetGuid, AssetName, &CreateInfo))
-                    {
-                        AssetCreateInfos.Add(CreateInfo);
-                    }
-                }
-            }
-
-            verifyfmod(StudioStringBank->unload());
-            verifyfmod(StudioSystem->update());
-
-            // Create new asset map - move existing assets over if they still match
-            TMap<FString, TWeakObjectPtr<UFMODAsset>> NewNameLookup;
-
-            for (const AssetCreateInfo &CreateInfo : AssetCreateInfos)
-            {
-                TWeakObjectPtr<UFMODAsset> Asset;
-                NameLookup.RemoveAndCopyValue(CreateInfo.StudioPath, Asset);
-
-                if (Asset.IsValid() && Asset->GetClass() == CreateInfo.Class && Asset->AssetGuid == CreateInfo.Guid)
-                {
-                    NewNameLookup.Add(CreateInfo.StudioPath, Asset);
-                }
-                else
-                {
-                    // Clean up existing asset (if there was one)
-                    if (Asset.IsValid())
-                    {
-                        DeleteAsset(Asset.Get());
-                    }
-
-                    UFMODAsset *NewAsset = CreateAsset(CreateInfo);
-                    NewNameLookup.Add(CreateInfo.StudioPath, NewAsset);
-                    FAssetRegistryModule::AssetCreated(NewAsset);
-                }
-            }
-
-            // Everything left in the name lookup was removed
-            for (auto& Entry : NameLookup)
-            {
-                DeleteAsset(Entry.Value.Get());
-            }
-
-            NameLookup = NewNameLookup;
-        }
-        else
-        {
-            UE_LOG(LogFMOD, Warning, TEXT("Failed to load strings bank: %s"), *StringPath);
-        }
+        Collector.AddReferencedObject(AssetLookup);
     }
 }
 
-FString FFMODAssetTable::GetAssetClassName(UClass* AssetClass)
+void FFMODAssetTable::Load()
 {
-    FString ClassName("");
-
-    if (AssetClass == UFMODEvent::StaticClass())
-    {
-        ClassName = TEXT("Events");
-    }
-    else if (AssetClass == UFMODSnapshot::StaticClass())
-    {
-        ClassName = TEXT("Snapshots");
-    }
-    else if (AssetClass == UFMODBank::StaticClass())
-    {
-        ClassName = TEXT("Banks");
-    }
-    else if (AssetClass == UFMODBus::StaticClass())
-    {
-        ClassName = TEXT("Buses");
-    }
-    else if (AssetClass == UFMODVCA::StaticClass())
-    {
-        ClassName = TEXT("VCAs");
-    }
-    else if (AssetClass == UFMODSnapshotReverb::StaticClass())
-    {
-        ClassName = TEXT("Reverbs");
-    }
-    return ClassName;
-}
-
-bool FFMODAssetTable::MakeAssetCreateInfo(const FGuid &AssetGuid, const FString &StudioPath, AssetCreateInfo *CreateInfo)
-{
-    CreateInfo->StudioPath = StudioPath;
-    CreateInfo->Guid = AssetGuid;
-
-    FString AssetType;
-    FString AssetPath;
-    StudioPath.Split(TEXT(":"), &AssetType, &AssetPath, ESearchCase::CaseSensitive, ESearchDir::FromStart);
-
-    if (AssetType.Equals(TEXT("event")))
-    {
-        CreateInfo->Class = UFMODEvent::StaticClass();
-    }
-    else if (AssetType.Equals(TEXT("snapshot")))
-    {
-        CreateInfo->Class = UFMODSnapshot::StaticClass();
-    }
-    else if (AssetType.Equals(TEXT("bank")))
-    {
-        CreateInfo->Class = UFMODBank::StaticClass();
-    }
-    else if (AssetType.Equals(TEXT("bus")))
-    {
-        CreateInfo->Class = UFMODBus::StaticClass();
-    }
-    else if (AssetType.Equals(TEXT("vca")))
-    {
-        CreateInfo->Class = UFMODVCA::StaticClass();
-    }
-    else if (AssetType.Equals(TEXT("parameter")))
-    {
-        return false;
-    }
-    else
-    {
-        UE_LOG(LogFMOD, Warning, TEXT("Unknown asset type: %s"), *AssetType);
-        CreateInfo->Class = UFMODAsset::StaticClass();
-    }
-
-    AssetPath.Split(TEXT("/"), &(CreateInfo->Path), &(CreateInfo->AssetName), ESearchCase::CaseSensitive, ESearchDir::FromEnd);
-
-    if (CreateInfo->AssetName.IsEmpty() || CreateInfo->AssetName.Contains(TEXT(".strings")))
-    {
-        return false;
-    }
-    return true;
-}
-
-
-// These SanitizeXXX functions are copied from ObjectTools - we currently use this at runtime and ObjectTools is not available. If we start
-// serializing our generated assets when cooking then we can revert to using the versions in ObjectTools and remove these local copies.
-static FString SanitizeInvalidChars(const FString &InObjectName, const FString &InvalidChars)
-{
-    FString SanitizedName;
-
-    // See if the name contains invalid characters.
-    FString Char;
-    for (int32 CharIdx = 0; CharIdx < InObjectName.Len(); ++CharIdx)
-    {
-        Char = InObjectName.Mid(CharIdx, 1);
-
-        if (InvalidChars.Contains(*Char))
-        {
-            SanitizedName += TEXT("_");
-        }
-        else
-        {
-            SanitizedName += Char;
-        }
-    }
-
-    return SanitizedName;
-}
-
-static FString SanitizeObjectName(const FString &InObjectName)
-{
-    return SanitizeInvalidChars(InObjectName, INVALID_OBJECTNAME_CHARACTERS);
-}
-
-UFMODAsset *FFMODAssetTable::CreateAsset(const AssetCreateInfo& CreateInfo)
-{
-    FString SanitizedAssetName;
-    FText OutReason;
-
-    if (FName::IsValidXName(CreateInfo.AssetName, INVALID_OBJECTNAME_CHARACTERS, &OutReason))
-    {
-        SanitizedAssetName = CreateInfo.AssetName;
-    }
-    else
-    {
-        SanitizedAssetName = SanitizeObjectName(CreateInfo.AssetName);
-        UE_LOG(LogFMOD, Warning, TEXT("'%s' cannot be used as a UE4 asset name. %s. Using '%s' instead."), *CreateInfo.AssetName,
-            *OutReason.ToString(), *SanitizedAssetName);
-    }
-
     const UFMODSettings &Settings = *GetDefault<UFMODSettings>();
-    FString Folder = Settings.ContentBrowserPrefix + GetAssetClassName(CreateInfo.Class) + CreateInfo.Path;
-    FString PackagePath = FString::Printf(TEXT("%s/%s"), *Folder, *SanitizedAssetName);
-    FString SanitizedPackagePath;
+    FString PackagePath = Settings.ContentBrowserPrefix + PrivateDataPath();
 
-    if (FName::IsValidXName(PackagePath, INVALID_LONGPACKAGE_CHARACTERS, &OutReason))
+    FString PackageName = PackagePath + BankLookupName();
+    UPackage *Package = CreatePackage(*PackageName);
+    Package->FullyLoad();
+    BankLookup = FindObject<UFMODBankLookup>(Package, *BankLookupName(), true);
+
+    if (BankLookup)
     {
-        SanitizedPackagePath = PackagePath;
+        UE_LOG(LogFMOD, Display, TEXT("Loaded bank lookup"));
     }
     else
     {
-        SanitizedPackagePath = SanitizeInvalidChars(PackagePath, INVALID_OBJECTPATH_CHARACTERS);
-        UE_LOG(LogFMOD, Warning, TEXT("'%s' cannot be used as a UE4 asset path. %s. Using '%s' instead."), *PackagePath, *OutReason.ToString(),
-            *SanitizedPackagePath);
+        UE_LOG(LogFMOD, Error, TEXT("Failed to load bank lookup"));
     }
 
-    UE_LOG(LogFMOD, Log, TEXT("Constructing asset: %s"), *SanitizedPackagePath);
+    PackageName = PackagePath + AssetLookupName();
+    Package = CreatePackage(*PackageName);
+    Package->FullyLoad();
+    AssetLookup = FindObject<UDataTable>(Package, *AssetLookupName(), true);
 
-    UFMODAsset *Asset = nullptr;
-    EObjectFlags NewObjectFlags = RF_Standalone | RF_Public;
-
-    if (IsRunningDedicatedServer())
+    if (AssetLookup)
     {
-        NewObjectFlags |= RF_MarkAsRootSet;
+        UE_LOG(LogFMOD, Display, TEXT("Loaded asset lookup"));
     }
-
-    UPackage *NewPackage = CreatePackage(nullptr, *SanitizedPackagePath);
-    EPackageFlags NewPackageFlags = GEventDrivenLoaderEnabled ? PKG_None : PKG_CompiledIn;
-
-    if (IsValid(NewPackage))
+    else
     {
-        NewPackage->SetPackageFlags(NewPackageFlags);
-        Asset = NewObject<UFMODAsset>(NewPackage, CreateInfo.Class, FName(*SanitizedAssetName), NewObjectFlags);
-
-        if (IsValid(Asset))
-        {
-            FAssetRegistryModule::AssetCreated(Asset);
-            Asset->AssetGuid = CreateInfo.Guid;
-        }
+        UE_LOG(LogFMOD, Error, TEXT("Failed to load asset lookup"));
     }
-    
-    if (!IsValid(Asset))
-    {
-        UE_LOG(LogFMOD, Warning, TEXT("Failed to construct asset: %s"), *SanitizedPackagePath);
-    }
-
-    if (CreateInfo.Class == UFMODSnapshot::StaticClass())
-    {
-        FString OldPrefix = Settings.ContentBrowserPrefix + GetAssetClassName(Asset->GetClass());
-        FString NewPrefix = Settings.ContentBrowserPrefix + GetAssetClassName(UFMODSnapshotReverb::StaticClass());
-        UObject *Outer = Asset->GetOuter() ? Asset->GetOuter() : Asset;
-        FString ReverbPackagePath = Outer->GetPathName().Replace(*OldPrefix, *NewPrefix);
-
-        UE_LOG(LogFMOD, Log, TEXT("Constructing snapshot reverb asset: %s"), *ReverbPackagePath);
-
-        UPackage *ReverbPackage = CreatePackage(nullptr, *ReverbPackagePath);
-        UFMODSnapshotReverb *AssetReverb = nullptr;
-
-        if (IsValid(ReverbPackage))
-        {
-            ReverbPackage->SetPackageFlags(NewPackageFlags);
-            AssetReverb = NewObject<UFMODSnapshotReverb>(ReverbPackage, UFMODSnapshotReverb::StaticClass(), FName(*SanitizedAssetName), NewObjectFlags);
-
-            if (IsValid(AssetReverb))
-            {
-                FAssetRegistryModule::AssetCreated(AssetReverb);
-                AssetReverb->AssetGuid = CreateInfo.Guid;
-            }
-        }
-
-        if (!IsValid(AssetReverb))
-        {
-            UE_LOG(LogFMOD, Warning, TEXT("Failed to construct snapshot reverb asset: %s"), *ReverbPackagePath);
-        }
-    }
-
-    return Asset;
-}
-
-void FFMODAssetTable::DeleteAsset(UObject *Asset)
-{
-#if WITH_EDITOR
-    if (Asset)
-    {
-        TArray<UObject *> ObjectsToDelete;
-        ObjectsToDelete.Add(Asset);
-
-        if (Asset->GetClass() == UFMODSnapshot::StaticClass())
-        {
-            // Also delete the reverb asset
-            const UFMODSettings &Settings = *GetDefault<UFMODSettings>();
-            FString OldPrefix = Settings.ContentBrowserPrefix + GetAssetClassName(Asset->GetClass());
-            FString NewPrefix = Settings.ContentBrowserPrefix + GetAssetClassName(UFMODSnapshotReverb::StaticClass());
-            FString ReverbName = Asset->GetPathName().Replace(*OldPrefix, *NewPrefix);
-            UObject *Reverb = StaticFindObject(UFMODSnapshotReverb::StaticClass(), nullptr, *ReverbName);
-
-            if (Reverb)
-            {
-                ObjectsToDelete.Add(Reverb);
-            }
-        }
-
-        ObjectTools::ForceDeleteObjects(ObjectsToDelete, false);
-    }
-#endif
 }
 
 FString FFMODAssetTable::GetBankPathByGuid(const FGuid& Guid) const
 {
-    FString BankPath = "";
-    const FString* File = nullptr;
-    const BankLocalizations* localizations = BankPathLookup.Find(Guid);
+    FString BankPath;
 
-    if (localizations)
+    if (!BankLookup)
     {
-        const FString* DefaultFile = nullptr;
-
-        for (int i = 0; i < localizations->Num(); ++i)
-        {
-            if ((*localizations)[i].Locale.IsEmpty())
-            {
-                DefaultFile = &(*localizations)[i].Path;
-            }
-            else if ((*localizations)[i].Locale == ActiveLocale)
-            {
-                File = &(*localizations)[i].Path;
-                break;
-            }
-        }
-
-        if (!File)
-        {
-            File = DefaultFile;
-        }
+        UE_LOG(LogFMOD, Error, TEXT("Bank lookup not loaded"));
+        return BankPath;
     }
 
-    if (File)
+    FString GUID = Guid.ToString(EGuidFormats::DigitsWithHyphensInBraces);
+    FName BankTableName(*GUID);
+    FFMODLocalizedBankTable *BankTable = BankLookup->DataTable->FindRow<FFMODLocalizedBankTable>(BankTableName, nullptr, false);
+
+    if (BankTable)
     {
-        BankPath = *File;
+        BankPath = GetLocalizedBankPath(BankTable->Banks);
+    }
+    
+    return BankPath;
+}
+
+FString FFMODAssetTable::GetLocalizedBankPath(const UDataTable* BankTable) const
+{
+    FName RowName(*ActiveLocale);
+    FFMODLocalizedBankRow *Row = BankTable->FindRow<FFMODLocalizedBankRow>(RowName, nullptr, false);
+
+    if (!Row)
+    {
+        RowName = FName("<NON-LOCALIZED>");
+        Row = BankTable->FindRow<FFMODLocalizedBankRow>(RowName, nullptr, false);
+    }
+
+    FString BankPath;
+
+    if (Row)
+    {
+        BankPath = Row->Path;
     }
 
     return BankPath;
@@ -457,17 +125,17 @@ FString FFMODAssetTable::GetBankPath(const UFMODBank &Bank) const
 
 FString FFMODAssetTable::GetMasterBankPath() const
 {
-    return MasterBankPath;
+    return BankLookup ? BankLookup->MasterBankPath : FString();
 }
 
 FString FFMODAssetTable::GetMasterStringsBankPath() const
 {
-    return MasterStringsBankPath;
+    return BankLookup ? BankLookup->MasterStringsBankPath : FString();
 }
 
 FString FFMODAssetTable::GetMasterAssetsBankPath() const
 {
-    return MasterAssetsBankPath;
+    return BankLookup ? BankLookup->MasterAssetsBankPath : FString();
 }
 
 void FFMODAssetTable::SetLocale(const FString &LocaleCode)
@@ -477,118 +145,51 @@ void FFMODAssetTable::SetLocale(const FString &LocaleCode)
 
 void FFMODAssetTable::GetAllBankPaths(TArray<FString> &Paths, bool IncludeMasterBank) const
 {
-    const UFMODSettings &Settings = *GetDefault<UFMODSettings>();
-
-    for (const TMap<FGuid, BankLocalizations>::ElementType& Localizations : BankPathLookup)
+    if (BankLookup)
     {
-        FString BankPath = GetBankPathByGuid(Localizations.Key);
-        bool Skip = false;
+        const UFMODSettings &Settings = *GetDefault<UFMODSettings>();
 
-        if (BankPath.IsEmpty())
-        {
-            // Never expect to be in here, but should skip empty paths
-            continue;
-        }
+        BankLookup->DataTable->ForeachRow<FFMODLocalizedBankTable>(nullptr, [this, &Paths, IncludeMasterBank, &Settings](const FName &, const FFMODLocalizedBankTable& OuterRow) {
+            FString BankPath = GetLocalizedBankPath(OuterRow.Banks);
+            bool Skip = false;
 
-        if (!IncludeMasterBank)
-        {
-            Skip = (BankPath == Settings.GetMasterBankFilename() || BankPath == Settings.GetMasterAssetsBankFilename() || BankPath == Settings.GetMasterStringsBankFilename());
-        }
+            if (BankPath.IsEmpty())
+            {
+                // Never expect to be in here, but should skip empty paths
+                return;
+            }
 
-        if (!Skip)
-        {
-            Paths.Push(Settings.GetFullBankPath() / BankPath);
-        }
+            if (!IncludeMasterBank)
+            {
+                Skip = (BankPath == Settings.GetMasterBankFilename() || BankPath == Settings.GetMasterAssetsBankFilename() || BankPath == Settings.GetMasterStringsBankFilename());
+            }
+
+            if (!Skip)
+            {
+                Paths.Push(Settings.GetFullBankPath() / BankPath);
+            }
+        });
+    }
+    else
+    {
+        UE_LOG(LogFMOD, Error, TEXT("Bank lookup not loaded"));
     }
 }
 
-
-void FFMODAssetTable::GetAllBankPathsFromDisk(const FString &BankDir, TArray<FString> &Paths)
+UFMODAsset *FFMODAssetTable::GetAssetByStudioPath(const FString &InStudioPath) const
 {
-    FString SearchDir = BankDir;
+    UFMODAsset *Asset = nullptr;
 
-    TArray<FString> AllFiles;
-    IFileManager::Get().FindFilesRecursive(AllFiles, *SearchDir, TEXT("*.bank"), true, false, false);
-
-    for (FString &CurFile : AllFiles)
+    if (AssetLookup)
     {
-        Paths.Push(CurFile);
-    }
-}
+        FFMODAssetLookupRow *Row = AssetLookup->FindRow<FFMODAssetLookupRow>(FName(*InStudioPath), nullptr);
 
-void FFMODAssetTable::BuildBankPathLookup()
-{
-    const UFMODSettings &Settings = *GetDefault<UFMODSettings>();
-
-    TArray<FString> BankPaths;
-    GetAllBankPathsFromDisk(Settings.GetFullBankPath(), BankPaths);
-
-    BankPathLookup.Empty(BankPaths.Num());
-    MasterBankPath.Empty();
-    MasterStringsBankPath.Empty();
-    MasterAssetsBankPath.Empty();
-
-    if (BankPaths.Num() == 0)
-    {
-        return;
-    }
-
-    for (FString BankPath : BankPaths)
-    {
-        FMOD::Studio::Bank *Bank;
-        FMOD_RESULT result = StudioSystem->loadBankFile(TCHAR_TO_UTF8(*BankPath), FMOD_STUDIO_LOAD_BANK_NORMAL, &Bank);
-        FMOD_GUID GUID;
-
-        if (result == FMOD_OK)
+        if (Row)
         {
-            result = Bank->getID(&GUID);
-            Bank->unload();
-        }
-
-        if (result == FMOD_OK)
-        {
-            FString CurFilename = FPaths::GetCleanFilename(BankPath);
-            FString PathPart;
-            FString FilenamePart;
-            FString ExtensionPart;
-            FPaths::Split(BankPath, PathPart, FilenamePart, ExtensionPart);
-            BankPath = BankPath.RightChop(Settings.GetFullBankPath().Len() + 1);
-
-            BankLocalization localization;
-            localization.Path = BankPath;
-            localization.Locale = "";
-
-            for (const FFMODProjectLocale& Locale : Settings.Locales)
-            {
-                if (FilenamePart.EndsWith(FString("_") + Locale.LocaleCode))
-                {
-                    localization.Locale = Locale.LocaleCode;
-                    break;
-                }
-            }
-
-            BankLocalizations& localizations = BankPathLookup.FindOrAdd(FMODUtils::ConvertGuid(GUID));
-            localizations.Add(localization);
-
-            if (MasterBankPath.IsEmpty() && CurFilename == Settings.GetMasterBankFilename())
-            {
-                MasterBankPath = BankPath;
-            }
-            else if (MasterStringsBankPath.IsEmpty() && CurFilename == Settings.GetMasterStringsBankFilename())
-            {
-                MasterStringsBankPath = BankPath;
-            }
-            else if (MasterAssetsBankPath.IsEmpty() && CurFilename == Settings.GetMasterAssetsBankFilename())
-            {
-                MasterAssetsBankPath = BankPath;
-            }
-        }
-
-        if (result != FMOD_OK)
-        {
-            UE_LOG(LogFMOD, Error, TEXT("Failed to register disk file for bank: %s"), *BankPath);
+            UPackage *Package = FindObject<UPackage>(nullptr, *(Row->PackageName));
+            Asset = FindObject<UFMODAsset>(Package, *(Row->AssetName));
         }
     }
 
-    StudioSystem->flushCommands();
+    return Asset;
 }

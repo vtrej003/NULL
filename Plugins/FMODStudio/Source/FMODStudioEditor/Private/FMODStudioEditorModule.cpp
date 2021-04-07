@@ -1,4 +1,4 @@
-// Copyright (c), Firelight Technologies Pty, Ltd. 2012-2020.
+// Copyright (c), Firelight Technologies Pty, Ltd. 2012-2021.
 
 #include "FMODStudioEditorModule.h"
 #include "FMODStudioModule.h"
@@ -11,6 +11,8 @@
 #include "FMODEventEditor.h"
 #include "FMODAudioComponentVisualizer.h"
 #include "FMODAudioComponentDetails.h"
+#include "FMODAssetBuilder.h"
+#include "FMODBankUpdateNotifier.h"
 #include "FMODSettingsCustomization.h"
 #include "Sequencer/FMODChannelEditors.h"
 #include "Sequencer/FMODEventControlSection.h"
@@ -181,10 +183,9 @@ public:
     virtual void PostLoadCallback() override;
     virtual void ShutdownModule() override;
 
-    bool HandleSettingsSaved();
+    void OnPostEngineInit();
 
-    /** Called after all banks were reloaded by the studio module */
-    void HandleBanksReloaded();
+    bool HandleSettingsSaved();
 
     /** Show notification */
     void ShowNotification(const FText &Text, SNotificationItem::ECompletionState State);
@@ -197,6 +198,9 @@ public:
     void ViewportDraw(UCanvas *Canvas, APlayerController *);
 
     bool Tick(float DeltaTime);
+
+    /** Build UE4 assets for FMOD Studio items */
+    void BuildAssets();
 
     /** Add extensions to menu */
     void RegisterHelpMenuEntries();
@@ -229,6 +233,9 @@ public:
     TArray<FName> RegisteredComponentClassNames;
     void RegisterComponentVisualizer(FName ComponentClassName, TSharedPtr<FComponentVisualizer> Visualizer);
 
+    FSimpleMulticastDelegate BanksReloadedDelegate;
+    FSimpleMulticastDelegate &BanksReloadedEvent() override { return BanksReloadedDelegate; }
+
     /** The delegate to be invoked when this profiler manager ticks. */
     FTickerDelegate OnTick;
 
@@ -259,6 +266,12 @@ public:
     /** Notification popup that settings are bad */
     TWeakPtr<SNotificationItem> BadSettingsNotification;
 
+    /** Asset builder */
+    FFMODAssetBuilder AssetBuilder;
+
+    /** Periodically checks for updates of the strings.bank file */
+    FFMODBankUpdateNotifier BankUpdateNotifier;
+
     bool bSimulating;
     bool bIsInPIE;
     bool bRegisteredComponentVisualizers;
@@ -267,6 +280,11 @@ public:
 IMPLEMENT_MODULE(FFMODStudioEditorModule, FMODStudioEditor)
 
 void FFMODStudioEditorModule::StartupModule()
+{
+    FCoreDelegates::OnPostEngineInit.AddRaw(this, &FFMODStudioEditorModule::OnPostEngineInit);
+}
+
+void FFMODStudioEditorModule::OnPostEngineInit()
 {
     UE_LOG(LogFMOD, Log, TEXT("FFMODStudioEditorModule startup"));
 
@@ -341,12 +359,25 @@ void FFMODStudioEditorModule::StartupModule()
     OnTick = FTickerDelegate::CreateRaw(this, &FFMODStudioEditorModule::Tick);
     TickDelegateHandle = FTicker::GetCoreTicker().AddTicker(OnTick);
 
-    // This module is loaded after FMODStudioModule
-    HandleBanksReloadedDelegateHandle = IFMODStudioModule::Get().BanksReloadedEvent().AddRaw(this, &FFMODStudioEditorModule::HandleBanksReloaded);
+    // Create assets
+    AssetBuilder.Create();
+    BuildAssets();
+
+    // Pretend settings have updated to 
+    BankUpdateNotifier.BanksUpdatedEvent.AddRaw(this, &FFMODStudioEditorModule::ReloadBanks);
 
     // Register a callback to validate settings on startup
     IMainFrameModule& MainFrameModule = FModuleManager::LoadModuleChecked<IMainFrameModule>(TEXT("MainFrame"));
     MainFrameModule.OnMainFrameCreationFinished().AddRaw(this, &FFMODStudioEditorModule::OnMainFrameLoaded);
+}
+
+void FFMODStudioEditorModule::BuildAssets()
+{
+    if (!IsRunningCommandlet())
+    {
+        AssetBuilder.ProcessBanks();
+        HandleSettingsSaved();
+    }
 }
 
 void FFMODStudioEditorModule::RegisterHelpMenuEntries()
@@ -699,8 +730,7 @@ void FFMODStudioEditorModule::ValidateFMOD()
                 // Just try to do it again anyway
                 StudioLink.Execute(TEXT("studio.project.save()"), Result);
                 StudioLink.Execute(TEXT("studio.project.build()"), Result);
-                // Pretend settings have changed which will force a reload
-                IFMODStudioModule::Get().RefreshSettings();
+                BuildAssets();
             }
         }
 
@@ -944,12 +974,6 @@ void FFMODStudioEditorModule::ValidateFMOD()
     }
 }
 
-void FFMODStudioEditorModule::ReloadBanks()
-{
-    // Pretend settings have changed which will force a reload
-    IFMODStudioModule::Get().RefreshSettings();
-}
-
 void FFMODStudioEditorModule::OnMainFrameLoaded(TSharedPtr<SWindow> InRootWindow, bool bIsNewProjectWindow)
 {
     // Show a popup notification that allows the user to fix bad settings
@@ -999,6 +1023,8 @@ bool FFMODStudioEditorModule::Tick(float DeltaTime)
         bRegisteredComponentVisualizers = true;
     }
 
+    BankUpdateNotifier.Update();
+
     // Update listener position for Editor sound system
     FMOD::Studio::System *StudioSystem = IFMODStudioModule::Get().GetStudioSystem(EFMODSystemContext::Editor);
     if (StudioSystem)
@@ -1025,6 +1051,7 @@ bool FFMODStudioEditorModule::Tick(float DeltaTime)
 void FFMODStudioEditorModule::BeginPIE(bool simulating)
 {
     UE_LOG(LogFMOD, Verbose, TEXT("FFMODStudioEditorModule BeginPIE: %d"), simulating);
+    BankUpdateNotifier.EnableUpdate(false);
     bSimulating = simulating;
     bIsInPIE = true;
     IFMODStudioModule::Get().SetInPIE(true, simulating);
@@ -1036,6 +1063,7 @@ void FFMODStudioEditorModule::EndPIE(bool simulating)
     bSimulating = false;
     bIsInPIE = false;
     IFMODStudioModule::Get().SetInPIE(false, simulating);
+    BankUpdateNotifier.EnableUpdate(true);
 }
 
 void FFMODStudioEditorModule::PausePIE(bool simulating)
@@ -1090,6 +1118,8 @@ void FFMODStudioEditorModule::ShutdownModule()
 
     if (UObjectInitialized())
     {
+        BankUpdateNotifier.BanksUpdatedEvent.RemoveAll(this);
+
         // Unregister tick function.
         FTicker::GetCoreTicker().RemoveTicker(TickDelegateHandle);
 
@@ -1145,17 +1175,17 @@ void FFMODStudioEditorModule::ShutdownModule()
         SequencerModule->UnRegisterTrackEditor(FMODControlTrackEditorCreateTrackEditorHandle);
         SequencerModule->UnRegisterTrackEditor(FMODParamTrackEditorCreateTrackEditorHandle);
     }
-    IFMODStudioModule::Get().BanksReloadedEvent().Remove(HandleBanksReloadedDelegateHandle);
 }
 
 bool FFMODStudioEditorModule::HandleSettingsSaved()
 {
+    const UFMODSettings &Settings = *GetDefault<UFMODSettings>();
+    BankUpdateNotifier.SetFilePath(Settings.GetFullBankPath() / AssetBuilder.GetMasterStringsBankPath());
     IFMODStudioModule::Get().RefreshSettings();
-
     return true;
 }
 
-void FFMODStudioEditorModule::HandleBanksReloaded()
+void FFMODStudioEditorModule::ReloadBanks()
 {
     // Show a reload notification
     TArray<FString> FailedBanks = IFMODStudioModule::Get().GetFailedBankLoads(EFMODSystemContext::Auditioning);
@@ -1163,8 +1193,11 @@ void FFMODStudioEditorModule::HandleBanksReloaded()
     SNotificationItem::ECompletionState State;
     if (FailedBanks.Num() == 0)
     {
+        AssetBuilder.ProcessBanks();
+        IFMODStudioModule::Get().ReloadBanks();
         Message = LOCTEXT("FMODBanksReloaded", "Reloaded FMOD Banks\n");
         State = SNotificationItem::CS_Success;
+        BanksReloadedDelegate.Broadcast();
     }
     else
     {
