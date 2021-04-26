@@ -7,6 +7,7 @@
 #include "GunProjectile.h"
 #include "Camera/CameraComponent.h"
 #include "Components/CapsuleComponent.h"
+#include "CombatComponent.h"
 #include "CodenameNullCharacter.generated.h"
 
 UCLASS(config=Game)
@@ -21,6 +22,9 @@ class ACodenameNullCharacter : public ACharacter
 	/** Follow camera */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = Camera, meta = (AllowPrivateAccess = "true"))
 	class UCameraComponent* FollowCamera;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = Combat, meta = (AllowPrivateAccess = "true"))
+	class UCombatComponent* CombatComponent;
 public:
 	ACodenameNullCharacter();
 

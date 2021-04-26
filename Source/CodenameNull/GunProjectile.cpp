@@ -3,6 +3,7 @@
 
 #include "GunProjectile.h"
 #include <Runtime\Engine\Classes\Kismet\GameplayStatics.h>
+#include "CombatComponent.h"
 #include "DrawDebugHelpers.h"
 
 //AGunProjectile::AGunProjectile(float initialSpeed, float maxSpeed, bool bRotationFollowsVelocity, bool bShouldBounce, float bounciness, float projectileGravityScale)
@@ -33,6 +34,8 @@ AGunProjectile::AGunProjectile()
 		// Set the root component to be the collision component.
 		RootComponent = CollisionComponent;
 		CollisionComponent->SetNotifyRigidBodyCollision(true);
+
+		CollisionComponent->OnComponentBeginOverlap.AddDynamic(this, &AGunProjectile::OnBoxBeginOverlap);
 	}
 	if (!ProjectileMovementComponent)
 	{
@@ -56,12 +59,12 @@ AGunProjectile::AGunProjectile()
 			ProjectileMeshComponent->SetStaticMesh(Mesh.Object);
 		}
 	}
-	static ConstructorHelpers::FObjectFinder<UMaterial>Material(TEXT("'/Game/ThirdPersonCPP/Blueprints/SphereMaterial.SphereMaterial'"));
+	/*static ConstructorHelpers::FObjectFinder<UMaterial>Material(TEXT("'/Game/ThirdPersonCPP/Blueprints/SphereMaterial.SphereMaterial'"));
 	if (Material.Succeeded())
 	{
 		ProjectileMaterialInstance = UMaterialInstanceDynamic::Create(Material.Object, ProjectileMeshComponent);
 	}
-	ProjectileMeshComponent->SetMaterial(0, ProjectileMaterialInstance);
+	ProjectileMeshComponent->SetMaterial(0, ProjectileMaterialInstance);*/
 	ProjectileMeshComponent->SetRelativeScale3D(FVector(0.09f, 0.09f, 0.09f));
 	ProjectileMeshComponent->SetupAttachment(RootComponent);
 
@@ -89,18 +92,29 @@ void AGunProjectile::FireInDirection(const FVector& ShootDirection)
 	ProjectileMovementComponent->Velocity = ShootDirection * ProjectileMovementComponent->InitialSpeed;
 }
 
+void AGunProjectile::OnBoxBeginOverlap(UPrimitiveComponent* OverlappedComp, AActor* OtherActor, UPrimitiveComponent* OtherComp, int32 OtherBodyIndex, bool bFromSweep, const FHitResult& SweepResult)
+{
+	if (OtherActor != this)
+	{
+		if (OtherActor->GetComponentByClass(UCombatComponent::StaticClass()) && OtherActor != GetInstigator()) {
+			FString debug = "hit combat component on " + OtherActor->GetName();
+			UGameplayStatics::ApplyDamage(OtherActor, Damage, nullptr, this, nullptr);
+			GEngine->AddOnScreenDebugMessage(-1, 1.5, FColor::White, debug);
+			Destroy();
+		}
+	}
+}
+
 // Function that is called when the projectile hits something.
 void AGunProjectile::OnHit(UPrimitiveComponent* HitComponent, AActor* OtherActor, UPrimitiveComponent* OtherComponent, FVector NormalImpulse, const FHitResult& Hit)
 {
-	GEngine->AddOnScreenDebugMessage(-1, 1.5, FColor::White, "hit something");
 	if (OtherActor != this)
 	{
-		if (OtherComponent->IsSimulatingPhysics())
+		if (OtherComponent->IsSimulatingPhysics()) {
 			OtherComponent->AddImpulseAtLocation(ProjectileMovementComponent->Velocity * 100.0f, Hit.ImpactPoint);
-		else 
-			UGameplayStatics::ApplyPointDamage(OtherActor, Damage, GetVelocity().GetSafeNormal(), Hit, GetInstigatorController(), this, UDamageType::StaticClass());
+			
+		}
+		Destroy();
 	}
-
-	Destroy();
-}
+} 
 

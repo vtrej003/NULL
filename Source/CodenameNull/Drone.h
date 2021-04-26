@@ -4,12 +4,16 @@
 
 #include "CoreMinimal.h"
 #include "GameFramework/Pawn.h"
+#include "CombatComponent.h"
 #include "Drone.generated.h"
 
 UCLASS()
 class CODENAMENULL_API ADrone : public APawn
 {
 	GENERATED_BODY()
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = Combat, meta = (AllowPrivateAccess = "true"))
+	class UCombatComponent* CombatComponent;
 
 public:
 	// Sets default values for this pawn's properties
