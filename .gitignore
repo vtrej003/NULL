@@ -14,5 +14,7 @@ Plugins/Wwise
 *.xcodeproj
 *.xcworkspace
 Content/SoulCity
-Content/ModularBuildingSet
-Content/FMod
+CodenameNull.code-workspace
+Build
+
+/CodenameNull.sln.DotSettings.user

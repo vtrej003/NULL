@@ -27,11 +27,14 @@ public:
 
 	// Function that is called when the projectile hits something.
 	UFUNCTION()
-		void OnHit(UPrimitiveComponent* HitComponent, AActor* OtherActor, UPrimitiveComponent* OtherComponent, FVector NormalImpulse, const FHitResult& Hit);
+	void OnHit(UPrimitiveComponent* HitComponent, AActor* OtherActor, UPrimitiveComponent* OtherComponent, FVector NormalImpulse, const FHitResult& Hit);
 
 	// Damage to inflict when hitting something with CombatComponent
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat")
 	float Damage;
+
+	UPROPERTY(BlueprintReadWrite)
+	AActor* Shooter;
 
 	// Sphere collision component.
 	UPROPERTY(VisibleDefaultsOnly, Category = Projectile)
@@ -49,8 +52,11 @@ public:
 	UPROPERTY(VisibleDefaultsOnly, Category = Movement)
 		UMaterialInstanceDynamic* ProjectileMaterialInstance;
 
-	UFUNCTION()
+	UFUNCTION(BlueprintCallable)
 	// Function that initializes the projectile's velocity in the shoot direction.
 	void FireInDirection(const FVector& ShootDirection);
+
+	UFUNCTION()
+	void OnBoxBeginOverlap(UPrimitiveComponent* OverlappedComp, AActor* OtherActor, UPrimitiveComponent* OtherComp, int32 OtherBodyIndex, bool bFromSweep, const FHitResult& SweepResult);
 
 };
