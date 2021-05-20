@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<objects serializationModel="Studio.02.01.00">
+	<object class="Bank" id="{99081114-a367-4b70-8975-5efdd3075365}">
+		<property name="name">
+			<value>memesbank</value>
+		</property>
+		<relationship name="folder">
+			<destination>{92d6bc5e-77b7-45e0-b57f-375fb8d2aeb2}</destination>
+		</relationship>
+	</object>
+</objects>
