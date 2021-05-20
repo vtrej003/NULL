@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<objects serializationModel="Studio.02.01.00">
+	<object class="MasterAssetFolder" id="{e71fa395-2833-40b1-95f0-67291141706f}">
+		<property name="assetDirectory">
+			<value>../</value>
+		</property>
+	</object>
+</objects>

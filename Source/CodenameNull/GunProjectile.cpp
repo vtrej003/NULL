@@ -76,7 +76,6 @@ AGunProjectile::AGunProjectile()
 void AGunProjectile::BeginPlay()
 {
 	Super::BeginPlay();
-	
 }
 
 // Called every frame

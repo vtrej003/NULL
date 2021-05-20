@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<objects serializationModel="Studio.02.01.00">
+	<object class="AudioFile" id="{555e7f96-72af-4913-8744-0af246b666e7}">
+		<property name="assetPath">
+			<value>music/B for very end.wav</value>
+		</property>
+		<property name="isStreaming">
+			<value>true</value>
+		</property>
+		<property name="frequencyInKHz">
+			<value>48</value>
+		</property>
+		<property name="channelCount">
+			<value>2</value>
+		</property>
+		<property name="length">
+			<value>89.193812500000007</value>
+		</property>
+		<relationship name="masterAssetFolder">
+			<destination>{f38b5ed7-85bd-4ed8-b56c-b98bcd42950c}</destination>
+		</relationship>
+	</object>
+</objects>
