@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<objects serializationModel="Studio.02.01.00">
+	<object class="AudioFile" id="{721f4875-b8b3-46c6-af09-77c0d6f3206f}">
+		<property name="assetPath">
+			<value>music/A lead thru.wav</value>
+		</property>
+		<property name="isStreaming">
+			<value>true</value>
+		</property>
+		<property name="frequencyInKHz">
+			<value>48</value>
+		</property>
+		<property name="channelCount">
+			<value>2</value>
+		</property>
+		<property name="length">
+			<value>192</value>
+		</property>
+		<relationship name="masterAssetFolder">
+			<destination>{f38b5ed7-85bd-4ed8-b56c-b98bcd42950c}</destination>
+		</relationship>
+	</object>
+</objects>
