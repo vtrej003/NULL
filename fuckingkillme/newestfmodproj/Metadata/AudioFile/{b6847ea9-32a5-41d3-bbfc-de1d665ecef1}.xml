@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<objects serializationModel="Studio.02.01.00">
+	<object class="AudioFile" id="{b6847ea9-32a5-41d3-bbfc-de1d665ecef1}">
+		<property name="assetPath">
+			<value>drone/drone die.wav</value>
+		</property>
+		<property name="frequencyInKHz">
+			<value>48</value>
+		</property>
+		<property name="channelCount">
+			<value>2</value>
+		</property>
+		<property name="length">
+			<value>4</value>
+		</property>
+		<relationship name="masterAssetFolder">
+			<destination>{f38b5ed7-85bd-4ed8-b56c-b98bcd42950c}</destination>
+		</relationship>
+	</object>
+</objects>

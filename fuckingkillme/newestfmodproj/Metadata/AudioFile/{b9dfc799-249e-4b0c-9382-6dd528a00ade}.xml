@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<objects serializationModel="Studio.02.01.00">
+	<object class="AudioFile" id="{b9dfc799-249e-4b0c-9382-6dd528a00ade}">
+		<property name="assetPath">
+			<value>ambience/harshlamp to be unharshed.wav</value>
+		</property>
+		<property name="isStreaming">
+			<value>true</value>
+		</property>
+		<property name="frequencyInKHz">
+			<value>48</value>
+		</property>
+		<property name="channelCount">
+			<value>2</value>
+		</property>
+		<property name="length">
+			<value>14.121833333333333</value>
+		</property>
+		<relationship name="masterAssetFolder">
+			<destination>{f38b5ed7-85bd-4ed8-b56c-b98bcd42950c}</destination>
+		</relationship>
+	</object>
+</objects>

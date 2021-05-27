@@ -176,6 +176,7 @@
 		<relationship name="effects">
 			<destination>{50c50186-f7ad-426b-a444-92ef53c8469e}</destination>
 			<destination>{d27f8d7c-000f-4026-8689-65e972f7cb26}</destination>
+			<destination>{ce645317-fd30-4360-bac8-466b6aed54dc}</destination>
 		</relationship>
 	</object>
 	<object class="MixerBusPanner" id="{f0f30191-681d-4e7b-bd71-aa27d0a2d242}" />
@@ -202,6 +203,14 @@
 		</relationship>
 	</object>
 	<object class="MixerBusFader" id="{d27f8d7c-000f-4026-8689-65e972f7cb26}" />
+	<object class="GainEffect" id="{ce645317-fd30-4360-bac8-466b6aed54dc}">
+		<property name="bypass">
+			<value>true</value>
+		</property>
+		<property name="gain">
+			<value>-80</value>
+		</property>
+	</object>
 	<object class="AutomationCurve" id="{5d4cb594-4d4a-41f9-9daa-914e27de48a4}">
 		<relationship name="parameter">
 			<destination>{75d772e6-00eb-430e-b0bb-145a2154fa4e}</destination>
