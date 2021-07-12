@@ -5,6 +5,7 @@
 #include <Runtime\Engine\Classes\Kismet\GameplayStatics.h>
 #include "CombatComponent.h"
 #include "DrawDebugHelpers.h"
+#include "Kismet/KismetMathLibrary.h"
 
 //AGunProjectile::AGunProjectile(float initialSpeed, float maxSpeed, bool bRotationFollowsVelocity, bool bShouldBounce, float bounciness, float projectileGravityScale)
 //{
@@ -89,6 +90,7 @@ void AGunProjectile::Tick(float DeltaTime)
 void AGunProjectile::FireInDirection(const FVector& ShootDirection)
 {
 	ProjectileMovementComponent->Velocity = ShootDirection * ProjectileMovementComponent->InitialSpeed;
+	ProjectileMeshComponent->AddWorldRotation(UKismetMathLibrary::MakeRotFromX(ShootDirection));
 }
 
 void AGunProjectile::OnBoxBeginOverlap(UPrimitiveComponent* OverlappedComp, AActor* OtherActor, UPrimitiveComponent* OtherComp, int32 OtherBodyIndex, bool bFromSweep, const FHitResult& SweepResult)
