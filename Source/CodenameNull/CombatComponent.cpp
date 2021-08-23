@@ -37,7 +37,7 @@ void UCombatComponent::HandleTakeDamage(AActor* DamagedActor, float Damage, cons
 	GEngine->AddOnScreenDebugMessage(-1, 1.5, FColor::White, "took damage " +  FString::SanitizeFloat(Damage));
 	CurrentHealth = FMath::Clamp(CurrentHealth - Damage, 0.0f, MaxHealth);
 	OnHealthChanged.Broadcast(CurrentHealth);
-	if (CurrentHealth == 0.0f) {
+	if (CurrentHealth == 0.0f && !IsDead) {
 		OnDeath.Broadcast();
 		IsDead = true;
 	}
